@@ -45,12 +45,27 @@ const callApi = async (task, payload) => {
       body: JSON.stringify({ task, payload }),
     });
 
-    const body = await response.json();
-
     if (!response.ok) {
-      throw new Error(body.error || 'APIリクエストに失敗しました。');
+      // エラーレスポンスを一度だけテキストとして読み込む
+      const errorText = await response.text();
+      let errorMessage;
+      try {
+        // JSON形式のエラーを試みる
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error;
+      } catch (e) {
+        // JSONでなければテキストをそのままエラーとする
+        errorMessage = errorText;
+      }
+      // フォールバックメッセージ
+      if (!errorMessage) {
+        errorMessage = `APIリクエストに失敗しました。ステータス: ${response.status}`;
+      }
+      throw new Error(errorMessage);
     }
-    return body; // { data: ... }
+
+    // 成功したレスポンスは常にJSON形式
+    return await response.json();
   } catch (error) {
     console.error('API call failed:', error);
     throw error;
@@ -415,8 +430,7 @@ function ReceiptConfirm({ imagesB64, onBack, onSave, onRescan }) {
       setError('');
       try {
         const response = await callApi('receipt_confirm', { imagesB64 });
-        const parsedData = JSON.parse(response.data);
-        setFormData(parsedData);
+        setFormData(response.data);
       } catch (e) {
         console.error("API call error:", e);
         setError("レシート情報の解析中にエラーが発生しました。");
@@ -1145,7 +1159,7 @@ function App() {
     <div className="app-container">
        <header className="app-header">
         <div className="header-content">
-          <h1>我が家の！かんたん家計簿</h1>
+          <h1>AI家計簿</h1>
           {user && (
             <div className="user-info">
               <span>{user.name}</span>

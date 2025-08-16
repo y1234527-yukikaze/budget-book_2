@@ -1,5 +1,5 @@
 {
-  "name": "我が家の！かんたん家計簿2！",
+  "name": "AI家計簿",
   "description": "AIを活用したシンプルで使いやすい家計簿アプリです。",
   "requestFramePermissions": [
     "camera"

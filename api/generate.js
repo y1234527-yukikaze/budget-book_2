@@ -8,23 +8,50 @@
 // import { GoogleGenAI, Type } from "@google/genai"; のように使用します。
 import { GoogleGenAI, Type } from "https://esm.sh/@google/genai";
 
-export default async function handler(req, res) {
-  // POSTリクエストのみを許可
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', ['POST']);
-    return res.status(405).end(`Method ${req.method} Not Allowed`);
-  }
-
-  // APIキーがサーバーの環境変数に設定されているか確認
-  if (!process.env.API_KEY) {
-    return res.status(500).json({ error: "APIキーがサーバーに設定されていません。" });
-  }
+/**
+ * AIからの応答テキストを安全にJSONとして解析します。
+ * 応答がマークダウンのコードブロック(` ```json ... ``` `)で囲まれている場合も考慮します。
+ * @param {string} rawText - AIからの生の応答テキスト。
+ * @returns {object} パースされたJSONオブジェクト。
+ * @throws {Error} JSONのパースに失敗した場合。
+ */
+const cleanAndParseJson = (rawText) => {
+  // マークダウンのバッククォートと'json'言語識別子を削除し、前後の空白をトリムします。
+  const cleanedText = rawText.replace(/```json\n?|```/g, '').trim();
   
-  const { task, payload } = req.body;
-
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
   try {
+    return JSON.parse(cleanedText);
+  } catch (e) {
+    console.error("Failed to parse JSON response after cleaning:", cleanedText);
+    // ユーザーにはより一般的なエラーメッセージを返します。
+    throw new Error("AIからの応答が予期せぬ形式でした。");
+  }
+};
+
+
+export default async function handler(req, res) {
+  // 予期せぬクラッシュを防ぐため、リクエスト処理全体をtry...catchで囲みます。
+  try {
+    // POSTリクエストのみを許可
+    if (req.method !== 'POST') {
+      res.setHeader('Allow', ['POST']);
+      return res.status(405).end(`Method ${req.method} Not Allowed`);
+    }
+
+    // APIキーがサーバーの環境変数に設定されているか確認
+    if (!process.env.API_KEY) {
+      return res.status(500).json({ error: "APIキーがサーバーに設定されていません。" });
+    }
+    
+    // リクエストボディとタスクの存在を確認
+    if (!req.body || !req.body.task) {
+      return res.status(400).json({ error: "無効なリクエストです。タスクを指定してください。" });
+    }
+    
+    const { task, payload } = req.body;
+
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
     let result;
     switch (task) {
         
@@ -32,15 +59,15 @@ export default async function handler(req, res) {
         const { oshi } = payload;
         if (!oshi) throw new Error("推しの名前が必要です。");
 
-        const prompt = `${oshi}に関する最新情報を、ファンが見逃しがちな豆知識や細かい情報を含めて、日本語で100文字程度で教えてください。`;
+        const prompt = `${oshi}に関する面白い豆知識や最新情報を一つ、100文字程度の短い文章で教えてください。`;
         
+        // プレーンテキストで応答を要求
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
-            config: {
-                thinkingConfig: { thinkingBudget: 0 }
-            }
         });
+
+        // 応答テキストをそのまま結果として返します。
         result = response.text;
         break;
       }
@@ -83,13 +110,13 @@ export default async function handler(req, res) {
         
         const response = await ai.models.generateContent({
           model: 'gemini-2.5-flash',
-          contents: { parts: [...imageParts, textPart] },
+          contents: { parts: [textPart, ...imageParts] }, // ★★★修正点：配列からオブジェクトに変更★★★
           config: {
             responseMimeType: "application/json",
             responseSchema: schema,
           }
         });
-        result = response.text; // JSON文字列
+        result = cleanAndParseJson(response.text);
         break;
       }
 
@@ -118,7 +145,7 @@ export default async function handler(req, res) {
             contents: prompt,
             config: { responseMimeType: "application/json", responseSchema: schema }
         });
-        result = JSON.parse(response.text);
+        result = cleanAndParseJson(response.text);
         break;
       }
       
@@ -140,7 +167,7 @@ export default async function handler(req, res) {
               contents: prompt,
               config: { responseMimeType: "application/json", responseSchema: schema }
           });
-          result = JSON.parse(response.text);
+          result = cleanAndParseJson(response.text);
           break;
       }
 
@@ -150,11 +177,28 @@ export default async function handler(req, res) {
             .slice(-10)
             .map(r => ({ store: r.storeName, items: r.items.map(i => i.name) }));
         const prompt = `以下のJSONはユーザーの最近の買い物履歴です。このデータに基づき、ユーザーの生活に役立つヒントを2〜3個、親しみやすい口調で提案してください。例えば、よく行く店の特売情報、よく買う商品の値上がり傾向、あるいは関連商品の提案などです。\n\n購入履歴:\n${JSON.stringify(history)}`;
+        
+        const schema = {
+          type: Type.OBJECT,
+          properties: {
+            tips: {
+              type: Type.STRING,
+              description: "ユーザーへの生活のヒント",
+            },
+          },
+          required: ["tips"],
+        };
+
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: schema,
+            },
         });
-        result = response.text;
+        const parsedResponse = cleanAndParseJson(response.text);
+        result = parsedResponse.tips;
         break;
       }
 
@@ -190,7 +234,7 @@ export default async function handler(req, res) {
             config: { responseMimeType: "application/json", responseSchema: schema }
         });
 
-        const parsed = JSON.parse(response.text);
+        const parsed = cleanAndParseJson(response.text);
         const categoryTotals = {};
         allItems.forEach(item => {
             const foundCategory = parsed.categorizedItems?.find(ci => ci.name.trim() === item.name.trim());
@@ -217,6 +261,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ data: result });
 
   } catch (error) {
+    const task = req.body?.task || 'unknown';
     console.error(`'${task}' タスクのAPIルートでエラーが発生しました:`, error);
     // Vercelのログで詳細を確認できるように、エラーオブジェクト全体をログに出力します
     console.error(error);

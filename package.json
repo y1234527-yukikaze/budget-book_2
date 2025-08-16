@@ -2,6 +2,7 @@
   "name": "kakeibo-app",
   "version": "1.0.0",
   "description": "AI Kakeibo App with secure backend API.",
+  "type": "module",
   "private": true,
   "scripts": {
     "dev": "vercel dev",
