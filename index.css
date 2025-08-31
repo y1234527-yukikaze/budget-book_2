@@ -161,6 +161,9 @@ body {
   margin-bottom: 1.5rem;
   border: 1px solid var(--border-color);
 }
+.card:last-child {
+  margin-bottom: 0;
+}
 
 .card h2 {
   font-size: 1.2rem;
@@ -179,6 +182,9 @@ body {
 
 .form-group {
   margin-bottom: 1rem;
+}
+.form-group:last-child {
+    margin-bottom: 0;
 }
 
 .form-group label {
@@ -261,6 +267,17 @@ textarea.text-input {
   border-color: #ccc;
   color: #888;
 }
+
+.primary-actions {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.primary-actions .btn {
+  flex: 1;
+  height: 60px;
+}
+
 
 .home-grid {
   display: grid;
@@ -413,6 +430,18 @@ textarea.text-input {
   text-align: left;
   white-space: pre-wrap;
   word-break: break-all;
+  margin-bottom: 1.5rem;
+}
+
+.success-message {
+  color: var(--primary-dark);
+  background-color: #E8F5E9;
+  border: 1px solid var(--primary-color);
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+  margin-bottom: 1.5rem;
+  animation: fadeIn 0.5s;
 }
 
 /* --- GSI Error Screen Styles --- */
@@ -825,7 +854,7 @@ textarea.text-input {
   margin-top: 1.5rem;
 }
 
-/* --- Fixed Cost Input Styles --- */
+/* --- Fixed Cost & Manual Entry Input Styles --- */
 .screen-header-with-note {
   display: flex;
   justify-content: space-between;
@@ -869,7 +898,7 @@ textarea.text-input {
 }
 
 
-.fixed-cost-form {
+.fixed-cost-form, .manual-entry-form {
     display: flex;
     flex-direction: column;
     gap: 1rem;

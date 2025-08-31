@@ -643,7 +643,7 @@ function OshiSetup({ onSave, initialOshi, onBack = null }) {
 
 
 function Home({ onNavigate, oshi, isAiUnlocked, onLogout }) {
-    const aiDisabledTooltip = "1ヶ月分のデータ蓄積後に利用可能になります";
+  const aiDisabledTooltip = "1ヶ月分のデータ蓄積後に利用可能になります";
 
   return (
     <div className="screen">
@@ -662,8 +662,12 @@ function Home({ onNavigate, oshi, isAiUnlocked, onLogout }) {
          </div>
       </div>
       
-      <div className="home-grid">
+      <div className="primary-actions">
         <button className="btn btn-secondary" onClick={() => onNavigate('receipt-scan')}>撮影/読込</button>
+        <button className="btn btn-secondary" onClick={() => onNavigate('manual-entry')}>手入力</button>
+      </div>
+
+      <div className="home-grid">
         <button className="btn btn-secondary" onClick={() => onNavigate('fixed-cost')}>月の固定費</button>
         <button className="btn btn-secondary" onClick={() => onNavigate('reports')}>レポート</button>
         <button className="btn btn-secondary" onClick={() => onNavigate('shopping-list')}>買い物リスト</button>
@@ -1192,6 +1196,116 @@ function FixedCostInput({ onBack, allFixedCosts, onSave }) {
                 </form>
             </div>
             <button onClick={handleSave} className="btn btn-primary">この月の固定費を保存</button>
+        </div>
+    );
+}
+
+function ManualEntry({ onBack, onSave, isSaving }) {
+    const [storeName, setStoreName] = useState('');
+    const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
+    const [items, setItems] = useState([]);
+    const [newItemName, setNewItemName] = useState('');
+    const [newItemPrice, setNewItemPrice] = useState('');
+
+    const handleAddItem = (e) => {
+        e.preventDefault();
+        if (newItemName && newItemPrice) {
+            const newItem = { name: newItemName, price: parseInt(newItemPrice, 10) || 0 };
+            setItems(prev => [...prev, newItem]);
+            setNewItemName('');
+            setNewItemPrice('');
+        }
+    };
+
+    const handleDeleteItem = (indexToDelete) => {
+        setItems(items.filter((_, index) => index !== indexToDelete));
+    };
+
+    const handleSave = () => {
+        if (items.length > 0) {
+            onSave({ storeName: storeName || '手入力', purchaseDate, items });
+        }
+    };
+
+    const totalAmount = items.reduce((sum, item) => sum + (item.price || 0), 0);
+
+    return (
+        <div className="screen">
+            <BackButton onClick={onBack} />
+            <div className="card">
+                <h2>支出の手入力</h2>
+                <div className="form-group">
+                    <label htmlFor="manual-store-name">店名（任意）</label>
+                    <input
+                        id="manual-store-name"
+                        type="text"
+                        className="text-input"
+                        value={storeName}
+                        onChange={(e) => setStoreName(e.target.value)}
+                    />
+                </div>
+                <div className="form-group">
+                    <label htmlFor="manual-purchase-date">購入日</label>
+                    <input
+                        id="manual-purchase-date"
+                        type="date"
+                        className="text-input"
+                        value={purchaseDate}
+                        onChange={(e) => setPurchaseDate(e.target.value)}
+                    />
+                </div>
+            </div>
+            <div className="card">
+                <h3>品目を追加</h3>
+                <form onSubmit={handleAddItem} className="manual-entry-form">
+                    <div className="form-group">
+                        <label htmlFor="item-name">品名</label>
+                        <input
+                            id="item-name"
+                            type="text"
+                            className="text-input"
+                            value={newItemName}
+                            onChange={(e) => setNewItemName(e.target.value)}
+                            placeholder="例: 牛乳"
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label htmlFor="item-price">金額（円）</label>
+                        <input
+                            id="item-price"
+                            type="text"
+                            inputMode="numeric"
+                            className="text-input"
+                            value={newItemPrice}
+                            onChange={(e) => setNewItemPrice(e.target.value.replace(/\D/g, ''))}
+                            placeholder="例: 200"
+                        />
+                    </div>
+                    <button type="submit" className="btn btn-secondary" disabled={!newItemName || !newItemPrice}>リストに追加</button>
+                </form>
+            </div>
+             <div className="card">
+                <h3>入力済みリスト</h3>
+                {items.length > 0 ? (
+                    <ul className="item-list-display">
+                        {items.map((item, index) => (
+                            <li key={index}>
+                                <span>{item.name}</span>
+                                <span className="item-amount">{item.price.toLocaleString()}円</span>
+                                <button onClick={() => handleDeleteItem(index)} className="delete-btn">&times;</button>
+                            </li>
+                        ))}
+                    </ul>
+                ) : (
+                    <p className="text-light" style={{textAlign: 'center'}}>品目はまだありません。</p>
+                )}
+                <div className="total-amount">
+                    <strong>合計: {totalAmount.toLocaleString()}円</strong>
+                </div>
+            </div>
+            <button onClick={handleSave} className="btn btn-primary" disabled={isSaving || items.length === 0}>
+                {isSaving ? '保存中...' : '家計簿に保存'}
+            </button>
         </div>
     );
 }
@@ -2100,6 +2214,7 @@ function App() {
   const [stagedReceipt, setStagedReceipt] = useState(null);
   const [isProcessing, setIsProcessing] = useState<string | false>(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [fileLoadError, setFileLoadError] = useState(null);
   const [fileLoadLog, setFileLoadLog] = useState<string[]>([]);
 
@@ -2116,7 +2231,7 @@ function App() {
   const versionClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 
-  const AppVersion = "2.3.8";
+  const AppVersion = "2.4.0";
 
   // This function will be called to update any part of the app's data
   // and will automatically save it to Google Drive.
@@ -2127,9 +2242,16 @@ function App() {
       await driveApi.saveFile(driveFileId, newData);
     } catch(e) {
       setError(`データの保存に失敗しました: ${e.message}`);
+      throw e; // Re-throw to be caught by the caller
     }
   }, [driveFileId]);
 
+  const showSuccessMessage = (message) => {
+    setSuccessMessage(message);
+    setTimeout(() => {
+        setSuccessMessage('');
+    }, 4000); // Clear after 4 seconds
+  };
   
   // Diagnostic panel visibility logic
   const handleVersionClick = () => {
@@ -2469,15 +2591,22 @@ function App() {
     }
   };
 
-  const handleConfirmReceipt = (data) => {
+  const handleConfirmReceipt = async (data) => {
     setIsProcessing('家計簿に保存中...');
     const newReceipt = { id: Date.now(), ...data };
     const updatedData = { ...allData, receipts: [...allData.receipts, newReceipt] };
-    updateAndSaveData(updatedData);
-    setStagedReceipt(null);
-    setReceiptImages([]);
-    setCurrentScreen('home');
-    setIsProcessing(false);
+    try {
+        await updateAndSaveData(updatedData);
+        setStagedReceipt(null);
+        setReceiptImages([]);
+        setCurrentScreen('home');
+        showSuccessMessage(`${data.purchaseDate}のレシートを保存しました。`);
+    } catch (e) {
+        setError(`保存に失敗しました: ${e.message}`);
+        setCurrentScreen('home');
+    } finally {
+        setIsProcessing(false);
+    }
   };
 
   const handleRetakeForUnchecked = (currentItems) => {
@@ -2491,6 +2620,23 @@ function App() {
     setReceiptImages([]);
     setCurrentScreen('receipt-scan');
   }, []);
+
+  const handleManualSave = async (data) => {
+    setIsProcessing('家計簿に保存中...');
+    const newReceipt = { id: Date.now(), ...data, discount: 0, tax: 0 };
+    const sortedReceipts = [...allData.receipts, newReceipt].sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
+    const updatedData = { ...allData, receipts: sortedReceipts };
+    try {
+        await updateAndSaveData(updatedData);
+        setCurrentScreen('home');
+        showSuccessMessage(`${data.purchaseDate}の支出を保存しました。`);
+    } catch (e) {
+        setError(`保存に失敗しました: ${e.message}`);
+        setCurrentScreen('home');
+    } finally {
+        setIsProcessing(false);
+    }
+  };
 
   const updateReceipts = (updatedReceipts) => {
       updateAndSaveData({ ...allData, receipts: updatedReceipts });
@@ -2548,6 +2694,7 @@ function App() {
       'receipt-scan': navigateHome,
       'receipt-confirm': handleDiscardAndStartOver,
       'fixed-cost': navigateHome,
+      'manual-entry': navigateHome,
       'reports': navigateHome,
       'shopping-list': navigateHome,
       'recipe': navigateHome,
@@ -2579,6 +2726,8 @@ function App() {
                     isSaving={!!isProcessing} />;
       case 'fixed-cost':
         return <FixedCostInput onBack={navigateHome} allFixedCosts={fixedCosts} onSave={handleSaveFixedCosts} />;
+      case 'manual-entry':
+        return <ManualEntry onBack={navigateHome} onSave={handleManualSave} isSaving={!!isProcessing} />;
       case 'reports':
         return <Reports onBack={navigateHome} receipts={receipts} fixedCosts={fixedCosts} onUpdateReceipts={updateReceipts} driveFileId={driveFileId} />;
       case 'shopping-list':
@@ -2678,6 +2827,7 @@ function App() {
       </header>
       <main className="app-content">
         {error && <p className="error-message" onClick={() => setError('')} style={{whiteSpace: 'pre-wrap'}}>{error}</p>}
+        {successMessage && <p className="success-message">{successMessage}</p>}
         {isProcessing ? <Loader message={isProcessing as string} /> : renderScreen()}
       </main>
     </div>
