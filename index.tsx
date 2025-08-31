@@ -1870,8 +1870,9 @@ function MonthlyReport({ receipts, cacheKey }) {
     const [summary, setSummary] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
+    const [loadingMessage, setLoadingMessage] = useState('');
 
-    const getCategorySummary = async (forceRefresh = false) => {
+    const getCategorySummary = useCallback(async (forceRefresh = false) => {
         const cachedData = getFromStorage(cacheKey, null);
         if (receipts.length === 0) {
             setSummary([]);
@@ -1884,21 +1885,63 @@ function MonthlyReport({ receipts, cacheKey }) {
         }
         setIsLoading(true);
         setError('');
+
         try {
             const allItems = receipts.flatMap(r => r.items);
-            const response = await callApi('monthly_report_categorize', { items: allItems });
-            setSummary(response.data);
-            setToStorage(cacheKey, response.data);
+            const CHUNK_SIZE = 250;
+            const chunks = [];
+            for (let i = 0; i < allItems.length; i += CHUNK_SIZE) {
+                chunks.push(allItems.slice(i, i + CHUNK_SIZE));
+            }
+
+            const totalChunks = chunks.length;
+            if (totalChunks === 0) {
+                setSummary([]);
+                setToStorage(cacheKey, []);
+                setIsLoading(false);
+                return;
+            }
+
+            let completedChunks = 0;
+            setLoadingMessage(`AIが支出を分析中です... (0/${totalChunks})`);
+
+            const updateProgress = () => {
+                completedChunks++;
+                setLoadingMessage(`AIが支出を分析中です... (${completedChunks}/${totalChunks})`);
+            };
+
+            const chunkPromises = chunks.map(chunk =>
+                callApi('monthly_report_categorize', { items: chunk })
+                    .then(response => {
+                        updateProgress();
+                        return response.data;
+                    })
+            );
+
+            const allCategorizedChunks = await Promise.all(chunkPromises);
+
+            const combinedSummary = allCategorizedChunks.flat().reduce((acc, item) => {
+                acc[item.category] = (acc[item.category] || 0) + item.totalAmount;
+                return acc;
+            }, {});
+
+            const finalSummary = Object.entries(combinedSummary)
+                .map(([category, totalAmount]) => ({ category, totalAmount: totalAmount as number }))
+                .sort((a, b) => b.totalAmount - a.totalAmount);
+
+            setSummary(finalSummary);
+            setToStorage(cacheKey, finalSummary);
         } catch (err) {
             setError('カテゴリ別集計の取得に失敗しました。');
         } finally {
             setIsLoading(false);
+            setLoadingMessage('');
         }
-    };
+    }, [receipts, cacheKey]);
 
     useEffect(() => {
         getCategorySummary();
-    }, [receipts, cacheKey]);
+    }, [getCategorySummary]);
 
     const handleRefresh = () => {
         getCategorySummary(true);
@@ -1912,7 +1955,7 @@ function MonthlyReport({ receipts, cacheKey }) {
                     {isLoading ? '更新中...' : 'AIで再集計'}
                 </button>
             </div>
-            {isLoading && <Loader mini={true} message="AIが支出をカテゴリ分けしています..." />}
+            {isLoading && <Loader mini={true} message={loadingMessage || "AIが支出をカテゴリ分けしています..."} />}
             {error && <p className="error-message">{error}</p>}
             {!isLoading && !error && (!summary || summary.length === 0) &&
                 <p className="text-light" style={{textAlign: 'center', marginTop: '1rem'}}>集計するデータがありません。</p>
@@ -1937,6 +1980,7 @@ function YearlyReport({ receipts, allFixedCosts, cacheKey, year }) {
     const [monthlyData, setMonthlyData] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
+    const [loadingMessage, setLoadingMessage] = useState('');
 
     const generateColor = (str) => {
         let hash = 0;
@@ -1980,7 +2024,7 @@ function YearlyReport({ receipts, allFixedCosts, cacheKey, year }) {
         setMonthlyData(allMonthsData);
 
 
-        // AI-powered categorization (with cache)
+        // AI-powered categorization (with cache and batching)
         const cachedData = getFromStorage(cacheKey, null);
         if (receipts.length === 0) {
             setCategoryData([]);
@@ -1991,18 +2035,60 @@ function YearlyReport({ receipts, allFixedCosts, cacheKey, year }) {
             setCategoryData(cachedData);
             return;
         }
+        
         setIsLoading(true);
         setError('');
+        
         try {
             const allItems = receipts.flatMap(r => r.items);
-            const response = await callApi('monthly_report_categorize', { items: allItems });
-            const processed = response.data.map(d => ({ name: d.category, value: d.totalAmount, color: generateColor(d.category) }));
+            const CHUNK_SIZE = 250;
+            const chunks = [];
+            for (let i = 0; i < allItems.length; i += CHUNK_SIZE) {
+                chunks.push(allItems.slice(i, i + CHUNK_SIZE));
+            }
+
+            const totalChunks = chunks.length;
+             if (totalChunks === 0) {
+                setCategoryData([]);
+                setToStorage(cacheKey, []);
+                setIsLoading(false);
+                return;
+            }
+
+            let completedChunks = 0;
+            setLoadingMessage(`AIが1年間の支出を分析中です... (0/${totalChunks})`);
+
+            const updateProgress = () => {
+                completedChunks++;
+                setLoadingMessage(`AIが1年間の支出を分析中です... (${completedChunks}/${totalChunks})`);
+            };
+
+            const chunkPromises = chunks.map(chunk =>
+                callApi('monthly_report_categorize', { items: chunk })
+                    .then(response => {
+                        updateProgress();
+                        return response.data;
+                    })
+            );
+
+            const allCategorizedChunks = await Promise.all(chunkPromises);
+
+            const combinedSummary = allCategorizedChunks.flat().reduce((acc, item) => {
+                acc[item.category] = (acc[item.category] || 0) + item.totalAmount;
+                return acc;
+            }, {});
+
+            const processed = Object.entries(combinedSummary)
+                .map(([category, totalAmount]) => ({ name: category, value: totalAmount as number, color: generateColor(category) }))
+                .sort((a, b) => b.value - a.value);
+
             setCategoryData(processed);
             setToStorage(cacheKey, processed);
         } catch (err) {
             setError('カテゴリ分析に失敗しました。');
         } finally {
             setIsLoading(false);
+            setLoadingMessage('');
         }
     }, [receipts, allFixedCosts, cacheKey, year]);
     
@@ -2083,7 +2169,7 @@ function YearlyReport({ receipts, allFixedCosts, cacheKey, year }) {
                     {isLoading ? '更新中...' : 'AIで再分析'}
                 </button>
             </div>
-            {isLoading && <Loader mini={true} message="AIが1年間の支出を分析中です..." />}
+            {isLoading && <Loader mini={true} message={loadingMessage || "AIが1年間の支出を分析中です..."} />}
             {error && <p className="error-message">{error}</p>}
             {!isLoading && receipts.length === 0 && <p className="text-light" style={{ textAlign: 'center' }}>データがありません。</p>}
             
