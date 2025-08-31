@@ -1902,23 +1902,18 @@ function MonthlyReport({ receipts, cacheKey }) {
                 return;
             }
 
+            const allCategorizedChunks = [];
             let completedChunks = 0;
             setLoadingMessage(`AIが支出を分析中です... (0/${totalChunks})`);
 
-            const updateProgress = () => {
+            for (const chunk of chunks) {
+                const response = await callApi('monthly_report_categorize', { items: chunk });
+                if (response.data) {
+                    allCategorizedChunks.push(response.data);
+                }
                 completedChunks++;
                 setLoadingMessage(`AIが支出を分析中です... (${completedChunks}/${totalChunks})`);
-            };
-
-            const chunkPromises = chunks.map(chunk =>
-                callApi('monthly_report_categorize', { items: chunk })
-                    .then(response => {
-                        updateProgress();
-                        return response.data;
-                    })
-            );
-
-            const allCategorizedChunks = await Promise.all(chunkPromises);
+            }
 
             const combinedSummary = allCategorizedChunks.flat().reduce((acc, item) => {
                 acc[item.category] = (acc[item.category] || 0) + item.totalAmount;
@@ -2055,23 +2050,18 @@ function YearlyReport({ receipts, allFixedCosts, cacheKey, year }) {
                 return;
             }
 
+            const allCategorizedChunks = [];
             let completedChunks = 0;
             setLoadingMessage(`AIが1年間の支出を分析中です... (0/${totalChunks})`);
 
-            const updateProgress = () => {
+            for (const chunk of chunks) {
+                const response = await callApi('monthly_report_categorize', { items: chunk });
+                if (response.data) {
+                    allCategorizedChunks.push(response.data);
+                }
                 completedChunks++;
                 setLoadingMessage(`AIが1年間の支出を分析中です... (${completedChunks}/${totalChunks})`);
-            };
-
-            const chunkPromises = chunks.map(chunk =>
-                callApi('monthly_report_categorize', { items: chunk })
-                    .then(response => {
-                        updateProgress();
-                        return response.data;
-                    })
-            );
-
-            const allCategorizedChunks = await Promise.all(chunkPromises);
+            }
 
             const combinedSummary = allCategorizedChunks.flat().reduce((acc, item) => {
                 acc[item.category] = (acc[item.category] || 0) + item.totalAmount;
