@@ -1901,21 +1901,38 @@ function MonthlyReport({ receipts, cacheKey }) {
                 setIsLoading(false);
                 return;
             }
-
-            const allCategorizedChunks = [];
-            let completedChunks = 0;
+            
+            const CONCURRENCY_LIMIT = 3;
             setLoadingMessage(`AIが支出を分析中です... (0/${totalChunks})`);
 
-            for (const chunk of chunks) {
-                const response = await callApi('monthly_report_categorize', { items: chunk });
-                if (response.data) {
-                    allCategorizedChunks.push(response.data);
+            const allCategorizedChunks = new Array(totalChunks);
+            let completedChunks = 0;
+            const indexedChunks = chunks.map((chunk, index) => ({ chunk, index }));
+
+            const worker = async () => {
+                while (indexedChunks.length > 0) {
+                    const workItem = indexedChunks.shift();
+                    if (!workItem) continue;
+                    const { chunk, index } = workItem;
+
+                    const response = await callApi('monthly_report_categorize', { items: chunk });
+                    if (response.data) {
+                        allCategorizedChunks[index] = response.data;
+                    }
+
+                    completedChunks++;
+                    setLoadingMessage(`AIが支出を分析中です... (${completedChunks}/${totalChunks})`);
                 }
-                completedChunks++;
-                setLoadingMessage(`AIが支出を分析中です... (${completedChunks}/${totalChunks})`);
+            };
+
+            const workers = [];
+            for (let i = 0; i < Math.min(CONCURRENCY_LIMIT, totalChunks); i++) {
+                workers.push(worker());
             }
 
-            const combinedSummary = allCategorizedChunks.flat().reduce((acc, item) => {
+            await Promise.all(workers);
+
+            const combinedSummary = allCategorizedChunks.filter(Boolean).flat().reduce((acc, item) => {
                 acc[item.category] = (acc[item.category] || 0) + item.totalAmount;
                 return acc;
             }, {});
@@ -2050,20 +2067,37 @@ function YearlyReport({ receipts, allFixedCosts, cacheKey, year }) {
                 return;
             }
 
-            const allCategorizedChunks = [];
-            let completedChunks = 0;
+            const CONCURRENCY_LIMIT = 3;
             setLoadingMessage(`AIが1年間の支出を分析中です... (0/${totalChunks})`);
 
-            for (const chunk of chunks) {
-                const response = await callApi('monthly_report_categorize', { items: chunk });
-                if (response.data) {
-                    allCategorizedChunks.push(response.data);
+            const allCategorizedChunks = new Array(totalChunks);
+            let completedChunks = 0;
+            const indexedChunks = chunks.map((chunk, index) => ({ chunk, index }));
+
+            const worker = async () => {
+                while (indexedChunks.length > 0) {
+                    const workItem = indexedChunks.shift();
+                    if (!workItem) continue;
+                    const { chunk, index } = workItem;
+
+                    const response = await callApi('monthly_report_categorize', { items: chunk });
+                    if (response.data) {
+                        allCategorizedChunks[index] = response.data;
+                    }
+
+                    completedChunks++;
+                    setLoadingMessage(`AIが1年間の支出を分析中です... (${completedChunks}/${totalChunks})`);
                 }
-                completedChunks++;
-                setLoadingMessage(`AIが1年間の支出を分析中です... (${completedChunks}/${totalChunks})`);
+            };
+
+            const workers = [];
+            for (let i = 0; i < Math.min(CONCURRENCY_LIMIT, totalChunks); i++) {
+                workers.push(worker());
             }
 
-            const combinedSummary = allCategorizedChunks.flat().reduce((acc, item) => {
+            await Promise.all(workers);
+
+            const combinedSummary = allCategorizedChunks.filter(Boolean).flat().reduce((acc, item) => {
                 acc[item.category] = (acc[item.category] || 0) + item.totalAmount;
                 return acc;
             }, {});
