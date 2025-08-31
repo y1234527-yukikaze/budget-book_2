@@ -1,6 +1,6 @@
 {
   "name": "kakeibo-app",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "AI Kakeibo App with secure backend API.",
   "type": "module",
   "private": true,

@@ -3,31 +3,82 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI家計簿</title>
+  <title>我が家の！かんたん家計簿Ⅱ</title>
   <link rel="stylesheet" href="index.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
   
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!--
+    es-module-shims: importmapの互換性を向上させるためのポリフィルです。
+    これにより、様々なブラウザ環境でReact等のモジュールが正しく読み込まれるようになります。
+    モジュールを読み込む他のどのスクリプトよりも先に配置する必要があります。
+  -->
+  <script async src="https://ga.jspm.io/npm:es-module-shims@1.10.0/dist/es-module-shims.js" crossorigin="anonymous"></script>
+  
+  <!-- Babel for in-browser JSX transpilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin="anonymous"></script>
 
-  <script type="importmap">
+<script type="importmap">
 {
   "imports": {
-    "react": "https://esm.sh/react@18.2.0",
-    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-    "@google/genai": "https://esm.sh/@google/genai",
-    "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime",
-    "react-dom/": "https://esm.sh/react-dom@^19.1.1/",
-    "react/": "https://esm.sh/react@^19.1.1/"
+    "react": "https://esm.sh/react@18.2.0?dev",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client?dev",
+    "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime?dev",
+    "react/": "https://esm.sh/react@18.2.0/",
+    "react-dom/": "https://esm.sh/react-dom@18.2.0/"
   }
 }
 </script>
 <link rel="stylesheet" href="/index.css">
 </head>
 <body>
+  <div id="diagnostic-panel"></div>
   <div id="root"></div>
-  <script type="text/babel" data-type="module" src="index.tsx"></script>
+
+  <!-- Pre-Boot Diagnostic System -->
+  <script>
+    (function() {
+      const panel = document.getElementById('diagnostic-panel');
+      
+      window.diagnosticLog = (message, type = 'info') => {
+        if (panel) {
+          const p = document.createElement('p');
+          p.className = `diag-${type}`;
+          const time = new Date().toLocaleTimeString();
+          p.textContent = `${time} - ${message}`;
+          panel.appendChild(p);
+          panel.scrollTop = panel.scrollHeight;
+        }
+        const consoleMethod = type === 'error' ? 'error' : 'log';
+        console[consoleMethod](`[DIAGNOSTIC] ${message}`);
+      };
+
+      window.onerror = function (message, source, lineno, colno, error) {
+        const sourceFile = source ? source.split('/').pop() : 'unknown file';
+        const errorMsg = `[FATAL SCRIPT ERROR] ${message} at ${sourceFile}:${lineno}:${colno}`;
+        window.diagnosticLog(errorMsg, 'error');
+        if (error && error.stack) {
+            window.diagnosticLog(`Stack Trace: ${error.stack}`, 'error');
+        }
+        return true; // Prevent default browser error handling
+      };
+
+      window.addEventListener('unhandledrejection', event => {
+        const reason = event.reason || 'Unknown reason';
+        let errorMsg = `[FATAL ASYNC ERROR] ${reason}`;
+        window.diagnosticLog(errorMsg, 'error');
+        if (reason && reason.stack) {
+            window.diagnosticLog(`Stack Trace: ${reason.stack}`, 'error');
+        }
+      });
+
+      window.diagnosticLog('--- Pre-Boot 診断システム 起動 ---');
+      window.diagnosticLog('① index.html 読み込み完了');
+    })();
+  </script>
+
+  <script type="text/babel" data-type="module" data-presets="typescript,react" src="index.tsx"></script>
 <script type="module" src="/index.tsx"></script>
 </body>
 </html>
