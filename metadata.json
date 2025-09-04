@@ -1,7 +1,8 @@
 {
-  "name": "我が家の！かんたん家計簿Ⅱ",
-  "description": "AIを活用したシンプルで使いやすい家計簿アプリです。",
+  "name": "名刺管理アプリケーション",
+  "description": "An application to scan, store, and manage business cards, with features for call memos and data sharing.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "microphone"
   ]
 }
