@@ -868,13 +868,53 @@ const CardListScreen: FC = () => {
         });
     };
     
-    const handleExport = (format: 'csv' | 'txt') => {
+    const handleExport = (format: 'csv' | 'txt' | 'xlsx') => {
         const cardsToExport = cards.filter(c => selectedForExport.has(c.id));
-        if (cardsToExport.length === 0) return;
+        if (cardsToExport.length === 0) {
+            alert("エクスポートする名刺を選択してください。");
+            return;
+        }
 
         let content = '';
         let mimeType = '';
-        let filename = '';
+        let filename = `business_cards_${new Date().toISOString().split('T')[0]}`;
+        
+        if (format === 'xlsx') {
+            const header = ['id', 'companyName', 'name', 'furigana', 'department', 'title', 'zipCode', 'address', 'tel', 'mobileTel', 'fax', 'email', 'website', 'sns', 'otherTel', 'notes', 'tags', 'classification', 'customFields'];
+            const dataForSheet = cardsToExport.map(card => {
+                const row: Record<string, any> = {};
+                header.forEach(key => {
+                    let value = (card as any)[key];
+                    if (key === 'customFields' && Array.isArray(value)) {
+                        row[key] = value.map(f => `${f.key}:${f.value}`).join(';');
+                    } else if (Array.isArray(value)) {
+                        row[key] = value.join(';');
+                    } else if (value !== null && value !== undefined) {
+                        row[key] = value;
+                    } else {
+                        row[key] = '';
+                    }
+                });
+                return row;
+            });
+    
+            const worksheet = XLSX.utils.json_to_sheet(dataForSheet);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, '名刺データ');
+            
+            const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([wbout], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${filename}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            setShowExportModal(false);
+            return;
+        }
 
         if (format === 'csv') {
             const header = ['id', 'companyName', 'name', 'furigana', 'department', 'title', 'zipCode', 'address', 'tel', 'mobileTel', 'fax', 'email', 'website', 'sns', 'otherTel', 'notes', 'tags', 'classification', 'customFields'];
@@ -893,7 +933,7 @@ const CardListScreen: FC = () => {
             });
             content = [header.join(','), ...rows].join('\n');
             mimeType = 'text/csv;charset=utf-8;';
-            filename = `business_cards_${new Date().toISOString().split('T')[0]}.csv`;
+            filename = `${filename}.csv`;
         } else { // txt
             content = cardsToExport.map(card => {
                 return `--- Business Card ---\n` +
@@ -911,10 +951,10 @@ const CardListScreen: FC = () => {
                     `\n---------------------\n`;
             }).join('\n');
             mimeType = 'text/plain;charset=utf-8;';
-            filename = `business_cards_${new Date().toISOString().split('T')[0]}.txt`;
+            filename = `${filename}.txt`;
         }
         
-        const blob = new Blob([content], { type: mimeType });
+        const blob = new Blob(['\uFEFF' + content], { type: mimeType });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -1019,10 +1059,29 @@ const CardListScreen: FC = () => {
                         <h3>エクスポート形式を選択</h3>
                         <p>{selectedForExport.size}件の名刺をエクスポートします。</p>
                         <div className="export-options">
-                            <button className="control-button primary" onClick={() => handleExport('csv')}>CSVファイル</button>
-                            <button className="control-button" onClick={() => handleExport('txt')}>テキストファイル</button>
+                            <button className="export-option-button" onClick={() => handleExport('xlsx')}>
+                                <span className="export-icon">📊</span>
+                                <div className="export-text">
+                                    <strong>Excel (.xlsx)</strong>
+                                    <span className="export-description">編集やデータ分析に最適</span>
+                                </div>
+                            </button>
+                            <button className="export-option-button" onClick={() => handleExport('csv')}>
+                                <span className="export-icon">📄</span>
+                                <div className="export-text">
+                                    <strong>CSVファイル</strong>
+                                    <span className="export-description">他のシステムとの連携に</span>
+                                </div>
+                            </button>
+                            <button className="export-option-button" onClick={() => handleExport('txt')}>
+                                <span className="export-icon">📝</span>
+                                <div className="export-text">
+                                    <strong>テキストファイル</strong>
+                                    <span className="export-description">シンプルなバックアップに</span>
+                                </div>
+                            </button>
                         </div>
-                         <button className="control-button" style={{marginTop: '16px'}} onClick={() => setShowExportModal(false)}>閉じる</button>
+                         <button className="modal-close-button" onClick={() => setShowExportModal(false)}>閉じる</button>
                     </div>
                 </div>
             )}
@@ -1321,833 +1380,832 @@ const RecentHistoryScreen: FC = () => {
             </div>
 
             {activeTab === 'cards' && (
-                <>
-                    {recentCards.length === 0 ? (
-                        <div className="placeholder-screen"><p>最近閲覧した名刺はありません。</p></div>
-                    ) : (
-                        <div className="card-list">
-                            {recentCards.map(card => (
-                                <div key={card.id} className="card-list-item-container simple" onClick={() => handleSelectCard(card.id)} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && handleSelectCard(card.id)}>
-                                   <div className="card-list-item">
-                                       <div className="card-item-company">{card.companyName || '会社名未登録'}</div>
-                                       <div className="card-item-name">{card.name || '氏名未登録'}</div>
-                                   </div>
-                               </div>
-                           ))}
-                        </div>
-                    )}
-                </>
+                recentCards.length > 0 ? (
+                    <div className="card-list">
+                        {recentCards.map(card => (
+                            <div key={card.id} className="card-list-item-container simple" onClick={() => handleSelectCard(card.id)} role="button">
+                                <div className="card-list-item">
+                                    <div className="card-item-company">{card.companyName || '会社名未登録'}</div>
+                                    <div className="card-item-name">{card.name || '氏名未登録'}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="placeholder-screen">
+                        <p>名刺の閲覧履歴はありません。</p>
+                    </div>
+                )
             )}
 
             {activeTab === 'policies' && (
-                 <>
-                    {recentPolicies.length === 0 ? (
-                        <div className="placeholder-screen"><p>最近閲覧した分析データはありません。</p></div>
-                    ) : (
-                        <div className="card-list">
-                            {recentPolicies.map(policy => (
-                                <div key={policy.id} className="card-list-item-container simple" onClick={() => handleSelectPolicy(policy.id)} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && handleSelectPolicy(policy.id)}>
-                                    <div className="card-list-item">
-                                        <div className="card-item-company">{policy.title}</div>
-                                        <div className="card-item-name">{(policy.fields || []).slice(0, 2).map(f => f.value || '').join(' - ') || '詳細を見る'}</div>
-                                    </div>
+                recentPolicies.length > 0 ? (
+                     <div className="card-list">
+                        {recentPolicies.map(policy => (
+                            <div key={policy.id} className="card-list-item-container simple" onClick={() => handleSelectPolicy(policy.id)} role="button">
+                                <div className="card-list-item">
+                                    <div className="card-item-name">{policy.title}</div>
                                 </div>
-                            ))}
-                        </div>
-                    )}
-                </>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="placeholder-screen">
+                         <p>分析データの閲覧履歴はありません。</p>
+                    </div>
+                )
             )}
 
             <button className="back-button" onClick={goBack}>戻る</button>
         </div>
     );
-};
+}
 
+// --- START: Added Components ---
 
 const AddCardScreen: FC = () => {
     const { goBack, handleConfirmImages } = useAppContext();
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const [stream, setStream] = useState<MediaStream | null>(null);
-    const [imageFront, setImageFront] = useState<string | null>(null);
-    const [imageBack, setImageBack] = useState<string | null>(null);
-    const [isCapturing, setIsCapturing] = useState(false);
-    const [capturingFor, setCapturingFor] = useState<'front' | 'back' | null>(null);
-    
-    useEffect(() => {
-        const startCamera = async () => {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
-            try {
-                const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-                setStream(mediaStream);
-                if (videoRef.current) {
-                    videoRef.current.srcObject = mediaStream;
-                }
-            } catch (error) {
-                console.error("Error accessing camera:", error);
-                alert("カメラにアクセスできませんでした。");
-            }
-        };
+    const [isCameraActive, setIsCameraActive] = useState(false);
+    const [frontImage, setFrontImage] = useState<string | null>(null);
+    const [backImage, setBackImage] = useState<string | null>(null);
+    const [capturing, setCapturing] = useState<'front' | 'back' | null>(null);
+    const html5QrcodeRef = useRef<any>(null);
+    const videoRef = useRef<HTMLDivElement>(null);
 
-        if (isCapturing && capturingFor) {
+    const startCamera = async () => {
+        if (!videoRef.current) return;
+        try {
+            const html5Qrcode = new Html5Qrcode(videoRef.current.id);
+            html5QrcodeRef.current = html5Qrcode;
+            await html5Qrcode.start(
+                { facingMode: "environment" },
+                { fps: 10, qrbox: { width: 400, height: 225 } },
+                () => {}, () => {}
+            );
+            setIsCameraActive(true);
+        } catch (err) {
+            console.error("Camera start failed:", err);
+            alert("カメラの起動に失敗しました。カメラの権限が許可されているか確認してください。");
+        }
+    };
+
+    const stopCamera = () => {
+        if (html5QrcodeRef.current && isCameraActive) {
+            html5QrcodeRef.current.stop().then(() => {
+                setIsCameraActive(false);
+                html5QrcodeRef.current = null;
+            }).catch((err: any) => console.error("Camera stop failed", err));
+        }
+    };
+
+    useEffect(() => {
+        if (capturing) {
             startCamera();
         } else {
-             if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                setStream(null);
-            }
+            stopCamera();
         }
-        return () => {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
-        };
-    }, [isCapturing, capturingFor]);
+        return () => stopCamera();
+    }, [capturing]);
 
     const handleCapture = () => {
-        if (!videoRef.current || !capturingFor) return;
-
-        const video = videoRef.current;
-        const canvas = document.createElement('canvas');
-
-        const videoRatio = video.videoWidth / video.videoHeight;
-        const elemRatio = video.clientWidth / video.clientHeight;
-        
-        let sWidth = video.videoWidth;
-        let sHeight = video.videoHeight;
-        let sx = 0;
-        let sy = 0;
-
-        if (videoRatio > elemRatio) {
-            sWidth = video.videoHeight * elemRatio;
-            sx = (video.videoWidth - sWidth) / 2;
-        } else {
-            sHeight = video.videoWidth / elemRatio;
-            sy = (video.videoHeight - sHeight) / 2;
-        }
-
-        const cropSx = sx + sWidth * 0.05;
-        const cropSy = sy + sHeight * 0.05;
-        const cropSWidth = sWidth * 0.9;
-        const cropSHeight = sHeight * 0.9;
-
-        canvas.width = cropSWidth;
-        canvas.height = cropSHeight;
-
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-            ctx.drawImage(video, cropSx, cropSy, cropSWidth, cropSHeight, 0, 0, cropSWidth, cropSHeight);
-            const imageDataUrl = canvas.toDataURL('image/jpeg');
-            
-            if (capturingFor === 'front') {
-                setImageFront(imageDataUrl);
-            } else {
-                setImageBack(imageDataUrl);
-            }
-            
-            setIsCapturing(false);
-            setCapturingFor(null);
+        if (!html5QrcodeRef.current || !isCameraActive) return;
+        const videoElement = document.getElementById(videoRef.current!.id)?.querySelector('video');
+        if (videoElement) {
+            const canvas = document.createElement('canvas');
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            canvas.getContext('2d')?.drawImage(videoElement, 0, 0);
+            const dataUrl = canvas.toDataURL('image/jpeg');
+            if (capturing === 'front') setFrontImage(dataUrl);
+            if (capturing === 'back') setBackImage(dataUrl);
+            setCapturing(null);
         }
     };
-
-    const startCapture = (side: 'front' | 'back') => {
-        setCapturingFor(side);
-        setIsCapturing(true);
+    
+    const onConfirm = () => {
+        if (!frontImage && !backImage) {
+            alert('少なくとも1枚の画像を撮影してください。');
+            return;
+        }
+        handleConfirmImages({ front: frontImage, back: backImage });
     };
 
-    const cancelCapture = () => {
-        setIsCapturing(false);
-        setCapturingFor(null);
-    };
+    if (capturing) {
+        return (
+            <div className="add-card-screen capturing-view">
+                <p className="description-text">{capturing === 'front' ? '名刺の表面を枠に合わせてください' : '名刺の裏面を枠に合わせてください'}</p>
+                <div className="camera-container">
+                    <div id="camera-feed-container" ref={videoRef} className="camera-feed"></div>
+                    <div className="camera-overlay"></div>
+                </div>
+                <div className="camera-controls">
+                    <button className="control-button primary" onClick={handleCapture}>撮影</button>
+                    <button className="control-button" onClick={() => setCapturing(null)}>キャンセル</button>
+                </div>
+                <div className="privacy-notice">
+                    <span className="privacy-icon">ℹ️</span>
+                    <span>撮影された画像は暗号化され、安全にサーバーへ送信されます。データ抽出後に画像はサーバーから削除されます。</span>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="add-card-screen">
-            <h2>名刺追加</h2>
-            {isCapturing ? (
-                 <div className="capturing-view">
-                    <div className="camera-container">
-                        <video ref={videoRef} autoPlay playsInline className="camera-feed"></video>
-                        <div className="camera-overlay"></div>
-                    </div>
-                    <div className="camera-controls">
-                        <button className="control-button primary" onClick={handleCapture}>撮影</button>
-                        <button className="control-button" onClick={cancelCapture}>キャンセル</button>
-                    </div>
+            <p className="description-text">名刺の表と裏をスキャンします。</p>
+            <div className="capture-preview-area">
+                <div className="capture-slot">
+                    <p>表面</p>
+                    {frontImage ? <img src={frontImage} alt="Front Preview" /> : <div className="placeholder-img">📷</div>}
+                    <button className="control-button secondary" onClick={() => setCapturing('front')}>表面を撮影</button>
                 </div>
-            ) : (
-                <>
-                    <div className="capture-preview-area">
-                        <div className="capture-slot">
-                            {imageFront ? <img src={imageFront} alt="表面" /> : <div className="placeholder-img">表面</div>}
-                            <button className="control-button" onClick={() => startCapture('front')}>
-                                {imageFront ? '表面を撮り直す' : '表面を撮影'}
-                            </button>
-                        </div>
-                         <div className="capture-slot">
-                            {imageBack ? <img src={imageBack} alt="裏面" /> : <div className="placeholder-img">裏面</div>}
-                            <button className="control-button" onClick={() => startCapture('back')}>
-                                 {imageBack ? '裏面を撮り直す' : '裏面を撮影'}
-                            </button>
-                        </div>
-                    </div>
-                    <div className="privacy-notice">
-                        <span className="privacy-icon">🔒</span>
-                        ご安心ください：撮影された画像は情報の抽出処理にのみ使用され、GoogleのAIモデルの再学習や第三者への共有には使用されません。通信は暗号化され安全に保護されています。
-                    </div>
-                    <div className="add-card-controls">
-                       <button 
-                            className="control-button primary" 
-                            onClick={() => handleConfirmImages({ front: imageFront, back: imageBack })}
-                            disabled={!imageFront && !imageBack}
-                        >
-                            確認画面へ進む
-                        </button>
-                    </div>
-                </>
-            )}
+                <div className="capture-slot">
+                    <p>裏面</p>
+                    {backImage ? <img src={backImage} alt="Back Preview" /> : <div className="placeholder-img">📷</div>}
+                    <button className="control-button secondary" onClick={() => setCapturing('back')}>裏面を撮影</button>
+                </div>
+            </div>
+            <div className="add-card-controls">
+                 <button className="control-button primary" onClick={onConfirm} disabled={!frontImage && !backImage}>
+                    AIで読み取り
+                </button>
+            </div>
+             <div className="privacy-notice">
+                <span className="privacy-icon">ℹ️</span>
+                <span>撮影された画像は暗号化され、安全にサーバーへ送信されます。データ抽出後に画像はサーバーから削除されます。</span>
+            </div>
             <button className="back-button" onClick={goBack}>戻る</button>
         </div>
     );
 };
 
-
 const ConfirmCardScreen: FC = () => {
-    const { goBack, promptForClassification, imagesToConfirm, editingCard, extractionState, handleRetryExtraction, clearExtractionState } = useAppContext();
-    
-    const isEditing = !!editingCard;
-    const initialCardData = isEditing ? editingCard : (extractionState ? extractionState.confirmedData : {});
-    const images = isEditing ? { front: editingCard.imageUrl, back: editingCard.imageUrlBack } : imagesToConfirm;
-    const isManualCreation = !isEditing && !images;
-
-    const [cardData, setCardData] = useState<CardDataInput>(initialCardData);
-    const [tagInput, setTagInput] = useState(initialCardData.tags?.join(', ') || '');
-    const [websiteInput, setWebsiteInput] = useState(
-        (Array.isArray(initialCardData.website) ? initialCardData.website.join(', ') : initialCardData.website) || ''
-    );
-    const [snsInput, setSnsInput] = useState(
-        (Array.isArray(initialCardData.sns) ? initialCardData.sns.join(', ') : initialCardData.sns) || ''
-    );
-    const [isLoading, setIsLoading] = useState(!isEditing && !!images?.front);
+    const { imagesToConfirm, editingCard, goBack, handleSaveCard, handleUpdateCard, extractionState, clearExtractionState, handleRetryExtraction, promptForClassification, cardForClassification, cancelClassification } = useAppContext();
+    const [cardData, setCardData] = useState<CardDataInput>({});
+    const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [customFields, setCustomFields] = useState<{ id: number; key: string; value: string }[]>(
-        (isEditing && editingCard?.customFields?.map((f, i) => ({ ...f, id: Date.now() + i }))) || []
-    );
-    
-    const [checkedFields, setCheckedFields] = useState<Record<string, boolean>>(() => {
-        if (isEditing && editingCard) {
-            const newChecked: Record<string, boolean> = {};
-            Object.keys(editingCard).forEach(key => {
-                if ((editingCard as any)[key]) {
-                    newChecked[key] = true;
-                }
-            });
-            return newChecked;
-        }
-        return extractionState?.previousCheckedFields || {};
-    });
+    const [customFields, setCustomFields] = useState<CustomField[]>([]);
+    const [tags, setTags] = useState<string[]>([]);
+    const [checkedFields, setCheckedFields] = useState<Record<string, boolean>>({});
+    const isEditing = !!editingCard;
 
     useEffect(() => {
-        if (isEditing || isManualCreation || !images?.front) {
-            setIsLoading(false);
-            return;
-        }
-
-        const runExtraction = async () => {
+        const performExtraction = async (images: ImagesToConfirm, state?: ExtractionState) => {
             setIsLoading(true);
+            setError(null);
             try {
-                if (extractionState && extractionState.fieldsToReExtract.length > 0) {
-                    const reExtractedData = await callApiProxy('reExtractInfo', {
-                        frontImage: images.front,
-                        backImage: images.back,
-                        fieldsToReExtract: extractionState.fieldsToReExtract,
-                    });
-                    const updates = Object.entries(reExtractedData).reduce((acc, [key, value]) => {
-                        const valueExists = Array.isArray(value) ? value.length > 0 : !!value;
-                        if (valueExists) {
-                            acc[key as keyof CardDataInput] = value as any;
-                        }
-                        return acc;
-                    }, {} as Partial<CardDataInput>);
-                    
-                    setCardData(prev => ({...prev, ...updates}));
+                const payload: any = {
+                    frontImage: images.front,
+                    backImage: images.back,
+                };
+                let task = 'extractInfo';
 
-                    setCheckedFields(prev => {
-                        const newChecked = {...prev};
-                        Object.keys(updates).forEach(key => { 
-                           newChecked[key] = true;
-                        });
-                        return newChecked;
-                    });
-
-                } else {
-                    const extractedData = await callApiProxy('extractInfo', {
-                        frontImage: images.front,
-                        backImage: images.back,
-                    });
-                    setCardData(extractedData);
-                    const newChecked: Record<string, boolean> = {};
-                    Object.keys(extractedData).forEach(key => {
-                        if (extractedData[key as keyof CardDataInput]) {
-                            newChecked[key] = true;
-                        }
-                    });
-                    setCheckedFields(newChecked);
-                    if (extractedData.tags && Array.isArray(extractedData.tags)) setTagInput(extractedData.tags.join(', '));
-                    if (extractedData.website && Array.isArray(extractedData.website)) setWebsiteInput(extractedData.website.join(', '));
-                    if (extractedData.sns && Array.isArray(extractedData.sns)) setSnsInput(extractedData.sns.join(', '));
+                if (state) {
+                    task = 'reExtractInfo';
+                    payload.fieldsToReExtract = state.fieldsToReExtract;
+                }
+                
+                const result = await callApiProxy(task, payload);
+                
+                const newData = state ? { ...state.confirmedData, ...result } : result;
+                
+                setCardData(newData);
+                setCustomFields(newData.customFields || []);
+                setTags(newData.tags || []);
+                
+                if (state?.previousCheckedFields) {
+                    setCheckedFields(state.previousCheckedFields);
                 }
 
-            } catch (err) {
-                console.error("Error extracting info via proxy:", err);
-                setError("情報の抽出に失敗しました。手動で入力してください。");
+            } catch (err: any) {
+                setError(`情報の抽出に失敗しました: ${err.message}`);
             } finally {
                 setIsLoading(false);
                 clearExtractionState();
             }
         };
-        runExtraction();
-    }, [images, isEditing, extractionState, isManualCreation]);
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        if (isEditing) {
+            setCardData(editingCard);
+            setCustomFields(editingCard.customFields || []);
+            setTags(editingCard.tags || []);
+            setIsLoading(false);
+        } else if (imagesToConfirm) {
+            performExtraction(imagesToConfirm, extractionState || undefined);
+        } else { // Manual creation
+            setCardData({});
+            setCustomFields([]);
+            setTags([]);
+            setIsLoading(false);
+        }
+    }, [imagesToConfirm, editingCard, extractionState]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setCardData(prev => ({ ...prev, [name]: value }));
     };
-
-    const handleCheckChange = (fieldName: string, isChecked: boolean) => {
-        setCheckedFields(prev => ({ ...prev, [fieldName]: isChecked }));
-    };
     
-    const handleAddCustomField = () => {
-        setCustomFields([...customFields, { id: Date.now(), key: '', value: '' }]);
+    const handleTagChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setTags(e.target.value.split(',').map(t => t.trim()));
+    }
+
+    const handleCustomFieldChange = (index: number, field: 'key' | 'value', value: string) => {
+        const newFields = [...customFields];
+        newFields[index][field] = value;
+        setCustomFields(newFields);
     };
 
-    const handleCustomFieldChange = (id: number, type: 'key' | 'value', value: string) => {
-        setCustomFields(customFields.map(field => (field.id === id ? { ...field, [type]: value } : field)));
+    const addCustomField = () => {
+        setCustomFields([...customFields, { key: '', value: '' }]);
     };
 
-    const handleDeleteCustomField = (id: number) => {
-        setCustomFields(customFields.filter(field => field.id !== id));
+    const removeCustomField = (index: number) => {
+        setCustomFields(customFields.filter((_, i) => i !== index));
     };
 
-
-    const handlePromptClassification = () => {
-        const tagsArray = tagInput.split(',').map(t => t.trim()).filter(Boolean);
-        const websiteArray = websiteInput.split(',').map(t => t.trim()).filter(Boolean);
-        const snsArray = snsInput.split(',').map(t => t.trim()).filter(Boolean);
-        const finalCustomFields = customFields
-            .map(({ key, value }) => ({ key, value }))
-            .filter(f => f.key.trim() && f.value.trim());
-
-        const finalCardData = { 
-            ...cardData, 
-            tags: tagsArray, 
-            website: websiteArray, 
-            sns: snsArray,
-            customFields: finalCustomFields.length > 0 ? finalCustomFields : undefined
-        };
-
-        promptForClassification({
-            data: finalCardData,
-            images: images,
-            isEditing: isEditing,
-            editingId: editingCard?.id
-        });
-    };
-
-    const onBack = () => {
-        if (isEditing || isManualCreation) {
-            goBack();
+    const onSave = () => {
+        const finalCardData = { ...cardData, customFields, tags };
+        if(isEditing && editingCard) {
+            promptForClassification({ data: finalCardData, images: null, isEditing: true, editingId: editingCard.id });
         } else {
-            handleRetryExtraction(cardData, checkedFields);
+            promptForClassification({ data: finalCardData, images: imagesToConfirm, isEditing: false });
         }
     };
-
-    const allPossibleFields: (keyof CardDataInput)[] = [
-        'companyName', 'name', 'furigana', 'department', 'title', 'zipCode', 'address', 'tel', 'mobileTel', 'fax', 'email', 'website', 'sns', 'otherTel', 'notes', 'tags'
-    ];
-
-    const handleToggleAllChecks = () => {
-        const areAllChecked = allPossibleFields.every(field => !!checkedFields[field]);
-        const newCheckedState: Record<string, boolean> = {};
-        allPossibleFields.forEach(field => {
-            newCheckedState[field] = !areAllChecked;
-        });
-        setCheckedFields(newCheckedState);
+    
+    const onClassificationConfirm = (classification: string) => {
+        if (!cardForClassification) return;
+        const finalData = { ...cardForClassification.data, classification };
+        if (cardForClassification.isEditing && cardForClassification.editingId) {
+            handleUpdateCard({ ...finalData, id: cardForClassification.editingId, imageUrl: editingCard?.imageUrl || null, imageUrlBack: editingCard?.imageUrlBack || null });
+        } else {
+            handleSaveCard(finalData);
+        }
+    };
+    
+    const onRetry = () => {
+        handleRetryExtraction(cardData, checkedFields);
+    }
+    
+    const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, checked } = e.target;
+        setCheckedFields(prev => ({ ...prev, [name]: checked }));
     };
 
-    const areAllChecked = allPossibleFields.length > 0 && allPossibleFields.every(field => !!checkedFields[field]);
-
-    const renderForm = () => {
-        const fields: { name: keyof CardDataInput; label: string, type?: string }[] = [
-            { name: 'companyName', label: '会社名' }, { name: 'name', label: '氏名' },
-            { name: 'furigana', label: 'フリガナ' }, { name: 'department', label: '部署' },
-            { name: 'title', label: '役職' }, { name: 'zipCode', label: '郵便番号' },
-            { name: 'address', label: '住所' }, { name: 'tel', label: '電話番号' },
-            { name: 'mobileTel', label: '携帯番号' }, { name: 'fax', label: 'FAX' },
-            { name: 'email', label: 'Email' },
-        ];
+    const renderField = (key: keyof CardDataInput, label: string) => (
+        <div className="form-group">
+            {!isEditing && (
+                <input
+                    type="checkbox"
+                    name={key}
+                    className="field-checkbox"
+                    checked={checkedFields[key] || false}
+                    onChange={handleCheckboxChange}
+                    aria-label={`Confirm ${label}`}
+                />
+            )}
+            <label htmlFor={key}>{label}</label>
+            <input
+                type="text"
+                id={key}
+                name={key}
+                value={(cardData[key] as string) || ''}
+                onChange={handleChange}
+            />
+        </div>
+    );
+    
+    if (cardForClassification) {
         return (
-            <>
-                {!isEditing && !isManualCreation && (
-                    <div className="form-controls-header">
-                        <label>
-                            <input
-                                type="checkbox"
-                                onChange={handleToggleAllChecks}
-                                checked={areAllChecked}
-                                aria-label="すべての項目を選択または選択解除"
-                            />
-                            すべて選択 / 解除
-                        </label>
-                        <p className="checkbox-description">
-                            チェックした項目は確定済みとみなし、「撮り直す」際にAIによる再抽出を行いません。
-                        </p>
+            <div className="modal-overlay">
+                <div className="modal-content">
+                    <h3>分類を選択</h3>
+                    <p>この名刺をどのカテゴリに分類しますか？</p>
+                    <div className="classification-selector">
+                        {classifications.map(c => (
+                            <button
+                                key={c}
+                                className={`classification-select-button ${cardForClassification.data.classification === c ? 'active' : ''}`}
+                                onClick={() => onClassificationConfirm(c)}
+                            >
+                                {c}
+                            </button>
+                        ))}
                     </div>
-                )}
-                <form className="card-data-form" onSubmit={(e) => e.preventDefault()}>
-                    {fields.map(field => (
-                        <div className="form-group" key={field.name}>
-                            <label htmlFor={field.name}>{field.label}</label>
-                            {!isEditing && !isManualCreation && (
-                                <input
-                                    type="checkbox"
-                                    className="field-checkbox"
-                                    title={`この項目 (${field.label}) を確定する`}
-                                    checked={!!checkedFields[field.name]}
-                                    onChange={(e) => handleCheckChange(field.name, e.target.checked)}
-                                />
-                            )}
-                            <input
-                                type="text"
-                                id={field.name}
-                                name={field.name}
-                                value={(cardData as any)[field.name] || ''}
-                                onChange={handleInputChange}
-                            />
-                        </div>
-                    ))}
-                    <div className="form-group">
-                        <label htmlFor="website">Webサイト (カンマ区切り)</label>
-                        {!isEditing && !isManualCreation && <input type="checkbox" className="field-checkbox" title="Webサイトを確定する" checked={!!checkedFields['website']} onChange={(e) => handleCheckChange('website', e.target.checked)}/>}
-                        <input type="text" id="website" name="website" value={websiteInput} onChange={(e) => setWebsiteInput(e.target.value)} />
+                     <div className="modal-actions">
+                        <button className="control-button secondary" onClick={cancelClassification}>キャンセル</button>
                     </div>
-                     <div className="form-group">
-                        <label htmlFor="sns">SNS (カンマ区切り)</label>
-                        {!isEditing && !isManualCreation && <input type="checkbox" className="field-checkbox" title="SNSを確定する" checked={!!checkedFields['sns']} onChange={(e) => handleCheckChange('sns', e.target.checked)}/>}
-                        <input type="text" id="sns" name="sns" value={snsInput} onChange={(e) => setSnsInput(e.target.value)} />
-                    </div>
-                     <div className="form-group">
-                        <label htmlFor="otherTel">その他電話番号</label>
-                        {!isEditing && !isManualCreation && <input type="checkbox" className="field-checkbox" title="その他電話番号を確定する" checked={!!checkedFields['otherTel']} onChange={(e) => handleCheckChange('otherTel', e.target.checked)}/>}
-                        <textarea id="otherTel" name="otherTel" value={cardData.otherTel || ''} onChange={handleInputChange} rows={2}></textarea>
-                    </div>
-                    <div className="form-group">
-                        <label htmlFor="notes">備考</label>
-                        {!isEditing && !isManualCreation && <input type="checkbox" className="field-checkbox" title="備考を確定する" checked={!!checkedFields['notes']} onChange={(e) => handleCheckChange('notes', e.target.checked)}/>}
-                        <textarea id="notes" name="notes" value={cardData.notes || ''} onChange={handleInputChange} rows={3}></textarea>
-                    </div>
-                    <div className="form-group">
-                        <label htmlFor="tags">タグ (カンマ区切り)</label>
-                        {!isEditing && !isManualCreation && (
-                            <input
-                                type="checkbox"
-                                className="field-checkbox"
-                                title="タグを確定する"
-                                checked={!!checkedFields['tags']}
-                                onChange={(e) => handleCheckChange('tags', e.target.checked)}
-                            />
-                        )}
-                        <input
-                            type="text"
-                            id="tags"
-                            name="tags"
-                            value={tagInput}
-                            onChange={(e) => setTagInput(e.target.value)}
-                            placeholder="例: IT, クライアント, 展示会"
-                        />
-                    </div>
-                </form>
-                <div className="custom-fields-section">
-                    <h4>カスタム項目</h4>
-                    {customFields.map(field => (
-                        <div key={field.id} className="editable-key-value-item">
-                            <input
-                                type="text"
-                                value={field.key}
-                                onChange={(e) => handleCustomFieldChange(field.id, 'key', e.target.value)}
-                                placeholder="項目名"
-                                className="key-input"
-                            />
-                            <textarea
-                                value={field.value}
-                                onChange={(e) => handleCustomFieldChange(field.id, 'value', e.target.value)}
-                                placeholder="内容"
-                                className="value-input"
-                                rows={1}
-                            />
-                            <button onClick={() => handleDeleteCustomField(field.id)} className="delete-field-btn">×</button>
-                        </div>
-                    ))}
-                     <button onClick={handleAddCustomField} className="control-button secondary add-field-btn">
-                        <span className="button-icon">➕</span> 項目を追加
-                    </button>
                 </div>
-            </>
+            </div>
         );
-    };
+    }
+    
+    const images = isEditing ? { front: editingCard.imageUrl, back: editingCard.imageUrlBack } : imagesToConfirm;
 
     return (
         <div className="confirm-card-screen">
-            <h2>{isEditing ? '名刺情報の編集' : (isManualCreation ? '名刺の作成' : '名刺情報の確認')}</h2>
             <div className="confirm-content">
-                {!isManualCreation && (
-                  <div className="confirm-preview-container dual-image">
-                      {images?.front && <img src={images.front} alt="名刺（表面）" className="confirm-preview-image" />}
-                      {images?.back && <img src={images.back} alt="名刺（裏面）" className="confirm-preview-image" />}
-                  </div>
+                {(images?.front || images?.back) && (
+                     <div className={`confirm-preview-container ${images.front && images.back ? 'dual-image' : ''}`}>
+                        {images.front && <img src={images.front} alt="Front" className="confirm-preview-image" />}
+                        {images.back && <img src={images.back} alt="Back" className="confirm-preview-image" />}
+                    </div>
                 )}
-                <div className={`confirm-form-container ${isManualCreation ? 'full-width' : ''}`}>
+                <div className={`confirm-form-container ${(images?.front || images?.back) ? '' : 'full-width'}`}>
                     {isLoading ? (
-                         <div className="loading-container"><div className="spinner"></div><p>AIが情報を抽出中...</p></div>
+                        <div className="loading-container">
+                            <div className="spinner"></div>
+                            <p>AIが名刺情報を抽出中...</p>
+                        </div>
                     ) : error ? (
-                        <div className="error-container"><p>{error}</p>{renderForm()}</div>
+                        <div className="error-container">
+                            <p>{error}</p>
+                            <button className="control-button primary" onClick={goBack}>戻る</button>
+                        </div>
                     ) : (
-                        renderForm()
+                        <form className="card-data-form" onSubmit={(e) => e.preventDefault()}>
+                            {!isEditing && (
+                                <div className="form-controls-header">
+                                    <label>
+                                        <input type="checkbox" onChange={e => setCheckedFields(prev => {
+                                            const allChecked = e.target.checked;
+                                            const newState: Record<string, boolean> = {};
+                                            Object.keys(cardData).forEach(k => newState[k] = allChecked);
+                                            return newState;
+                                        })} />
+                                        すべての項目を承認
+                                    </label>
+                                    <p className="checkbox-description">AIの抽出結果が正しい項目にチェックを入れてください。チェックされていない項目のみ再抽出を試みます。</p>
+                                </div>
+                            )}
+                            {renderField('companyName', '会社名')}
+                            {renderField('name', '氏名')}
+                            {renderField('furigana', 'フリガナ')}
+                            {renderField('department', '部署')}
+                            {renderField('title', '役職')}
+                            {renderField('zipCode', '郵便番号')}
+                            {renderField('address', '住所')}
+                            {renderField('tel', '電話番号')}
+                            {renderField('mobileTel', '携帯番号')}
+                            {renderField('fax', 'FAX')}
+                            {renderField('email', 'Email')}
+                            <div className="form-group vertical">
+                                <label htmlFor="website">Webサイト (カンマ区切り)</label>
+                                <input type="text" id="website" name="website" value={Array.isArray(cardData.website) ? cardData.website.join(',') : (cardData.website || '')} onChange={e => setCardData(prev => ({...prev, website: e.target.value.split(',')}))}/>
+                            </div>
+                            <div className="form-group vertical">
+                                <label htmlFor="sns">SNS (カンマ区切り)</label>
+                                <input type="text" id="sns" name="sns" value={Array.isArray(cardData.sns) ? cardData.sns.join(',') : (cardData.sns || '')} onChange={e => setCardData(prev => ({...prev, sns: e.target.value.split(',')}))}/>
+                            </div>
+                            <div className="form-group vertical">
+                                <label htmlFor="otherTel">その他電話番号</label>
+                                <textarea id="otherTel" name="otherTel" value={cardData.otherTel || ''} onChange={handleChange} rows={2}></textarea>
+                            </div>
+                            <div className="form-group vertical">
+                                <label htmlFor="notes">備考</label>
+                                <textarea id="notes" name="notes" value={cardData.notes || ''} onChange={handleChange} rows={3}></textarea>
+                            </div>
+                            <div className="form-group vertical">
+                                <label htmlFor="tags">タグ (カンマ区切り)</label>
+                                <input type="text" id="tags" name="tags" value={tags.join(',')} onChange={handleTagChange} />
+                            </div>
+                             <h4>カスタム項目</h4>
+                            {customFields.map((field, index) => (
+                                <div key={index} className="form-group">
+                                    <input type="text" placeholder="項目名" value={field.key} onChange={e => handleCustomFieldChange(index, 'key', e.target.value)} />
+                                    <input type="text" placeholder="内容" value={field.value} onChange={e => handleCustomFieldChange(index, 'value', e.target.value)} />
+                                    <button type="button" onClick={() => removeCustomField(index)} className="delete-field-btn">&times;</button>
+                                </div>
+                            ))}
+                            <button type="button" onClick={addCustomField} className="control-button secondary">カスタム項目を追加</button>
+                        </form>
                     )}
                 </div>
             </div>
             <div className="confirm-controls">
-                <button className="control-button" onClick={onBack}>{isEditing || isManualCreation ? 'キャンセル' : '撮り直す'}</button>
-                <button className="control-button primary" onClick={handlePromptClassification}>{isEditing ? '更新' : '保存'}</button>
+                {!isEditing && (
+                    <button className="control-button secondary" onClick={onRetry} disabled={isLoading}>
+                        再抽出
+                    </button>
+                )}
+                 <button className="control-button primary" onClick={onSave} disabled={isLoading}>
+                    {isEditing ? '更新' : '保存'}
+                </button>
             </div>
+            <button className="back-button" onClick={goBack}>
+                 {isEditing ? '詳細に戻る' : 'キャンセル'}
+            </button>
         </div>
     );
 };
 
 const MemoScreen: FC = () => {
-    const { selectedCard: card, memos, handleSaveMemos, goBack, startRecordingOnCall, setStartRecordingOnCall, selectedCardPhoneNumber, setSelectedCardPhoneNumber } = useAppContext();
-    
-    if (!card) return null;
-
-    const savedMemos = memos[card.id] || [];
-    const [currentMemo, setCurrentMemo] = useState('');
+    const { selectedCard, memos, handleSaveMemos, goBack, startRecordingOnCall, setStartRecordingOnCall, selectedCardPhoneNumber } = useAppContext();
+    const [localMemos, setLocalMemos] = useState<Memo[]>([]);
+    const [newMemoContent, setNewMemoContent] = useState('');
     const [isRecording, setIsRecording] = useState(false);
-    const [isSummarizing, setIsSummarizing] = useState(false);
-    const [lastSummary, setLastSummary] = useState<{ content: string; summary: string } | null>(null);
-    const [summaryError, setSummaryError] = useState('');
     const recognitionRef = useRef<any>(null);
 
     useEffect(() => {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            alert('お使いのブラウザは音声認識をサポートしていません。');
-            return;
+        if (selectedCard) {
+            setLocalMemos(memos[selectedCard.id] || []);
         }
-        const recognition = new SpeechRecognition();
-        recognition.lang = 'ja-JP';
-        recognition.interimResults = true;
-        recognition.continuous = true;
+    }, [selectedCard, memos]);
 
-        recognition.onresult = (event: any) => {
-            let interimTranscript = '';
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                if (event.results[i].isFinal) {
-                    setCurrentMemo(prev => prev + event.results[i][0].transcript);
-                } else {
-                    interimTranscript += event.results[i][0].transcript;
-                }
-            }
-        };
-        recognition.onstart = () => setIsRecording(true);
-        recognition.onend = () => setIsRecording(false);
-        recognitionRef.current = recognition;
-    }, []);
-    
     useEffect(() => {
         if (startRecordingOnCall) {
-            if (selectedCardPhoneNumber) {
-                window.location.href = `tel:${selectedCardPhoneNumber}`;
-                setSelectedCardPhoneNumber(null);
-            }
-            setStartRecordingOnCall(false);
+            handleStartRecording();
+            setStartRecordingOnCall(false); // Reset the trigger
         }
     }, [startRecordingOnCall]);
+    
+    useEffect(() => {
+        // Setup SpeechRecognition
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            recognitionRef.current = new SpeechRecognition();
+            recognitionRef.current.continuous = true;
+            recognitionRef.current.interimResults = true;
+            recognitionRef.current.lang = 'ja-JP';
 
-    const handleToggleRecording = () => {
-        if (isRecording) {
-            recognitionRef.current?.stop();
-        } else {
-            try {
-                recognitionRef.current?.start();
-            } catch (e) {
-                 console.error("音声認識の開始に失敗しました:", e);
-                 alert("音声認識の開始に失敗しました。マイクの権限を確認してください。");
+            recognitionRef.current.onresult = (event: any) => {
+                let interimTranscript = '';
+                let finalTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
+                }
+                setNewMemoContent(prev => prev + finalTranscript);
+            };
+            
+            recognitionRef.current.onend = () => {
+                // If it stops unexpectedly, and we still want to be recording, restart it.
+                if (isRecording) {
+                    recognitionRef.current.start();
+                }
+            };
+        }
+    }, [isRecording]);
+
+    const handleStartRecording = () => {
+        if (recognitionRef.current && !isRecording) {
+            if (selectedCardPhoneNumber) {
+                // Start call
+                window.location.href = `tel:${selectedCardPhoneNumber.replace(/-/g, '')}`;
             }
+            setIsRecording(true);
+            recognitionRef.current.start();
         }
     };
 
-    const handleSaveMemo = () => {
-        if (currentMemo.trim() === '') return;
+    const handleStopRecording = () => {
+        if (recognitionRef.current && isRecording) {
+            setIsRecording(false);
+            recognitionRef.current.stop();
+        }
+    };
+
+    const handleSaveMemo = async () => {
+        if (!selectedCard || !newMemoContent.trim()) return;
+        const timestamp = new Date().toLocaleString('ja-JP');
+        let summary;
+        try {
+            const result = await callApiProxy('summarize', { text: newMemoContent });
+            summary = result.summary;
+        } catch (e) {
+            console.error("Summarization failed", e);
+            // Continue without summary if it fails
+        }
+        
         const newMemo: Memo = {
             id: Date.now(),
-            timestamp: new Date().toLocaleString('ja-JP'),
-            content: currentMemo.trim(),
-            summary: lastSummary?.content === currentMemo.trim() ? lastSummary.summary : undefined,
+            timestamp,
+            content: newMemoContent,
+            summary,
         };
-        handleSaveMemos(card.id, [...savedMemos, newMemo]);
-        setCurrentMemo('');
-        setLastSummary(null);
+        const updatedMemos = [...localMemos, newMemo];
+        setLocalMemos(updatedMemos);
+        handleSaveMemos(selectedCard.id, updatedMemos);
+        setNewMemoContent('');
     };
 
-    const handleSummarize = async () => {
-        if (currentMemo.trim() === '') return;
-        setIsSummarizing(true);
-        setSummaryError('');
-        setLastSummary(null);
-        try {
-            const result = await callApiProxy('summarize', { text: currentMemo });
-            setLastSummary({ content: currentMemo.trim(), summary: result.summary });
-        } catch (error) {
-            console.error("Error summarizing text via proxy:", error);
-            setSummaryError('要約の生成に失敗しました。');
-        } finally {
-            setIsSummarizing(false);
-        }
-    };
-    
-    const handleExport = () => {
-        let content = `--- ${card.companyName} ${card.name}様との会話メモ ---\n\n`;
-        const allMemos = [...savedMemos];
-        if (currentMemo.trim()) {
-            allMemos.push({ id: 0, timestamp: '（未保存のメモ）', content: currentMemo, summary: lastSummary?.summary });
-        }
-        allMemos.forEach(memo => {
-            content += `日時: ${memo.timestamp}\n`;
-            content += `内容:\n${memo.content}\n`;
-            if (memo.summary) {
-                content += `AIによる要約:\n${memo.summary}\n`;
-            }
-            content += '---------------------------------\n\n';
-        });
-        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `メモ_${card.name}_${new Date().toISOString().split('T')[0]}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    };
+    if (!selectedCard) return null;
 
     return (
         <div className="memo-screen">
-            <h2>{card.name}様 - 通話メモ</h2>
-            <div className="memo-content-area">
-                <div className="memo-list">
-                    <h3>保存済みメモ</h3>
-                    {savedMemos.length > 0 ? (
-                        savedMemos.map(memo => (
-                            <div key={memo.id} className="memo-item">
-                                <p className="memo-timestamp">{memo.timestamp}</p>
-                                <p className="memo-text">{memo.content}</p>
-                                {memo.summary && <div className="memo-summary-saved"><strong>AI要約:</strong> {memo.summary}</div>}
-                            </div>
-                        ))
-                    ) : (
-                        <p className="memo-placeholder">まだ保存されたメモはありません。</p>
-                    )}
-                </div>
-                <div className="memo-input-area">
-                    <h3>新規メモ</h3>
-                    <textarea
-                        value={currentMemo}
-                        onChange={(e) => setCurrentMemo(e.target.value)}
-                        placeholder="通話内容のメモを音声または手動で入力..."
-                    />
-                     {isSummarizing && <div className="loading-container inline"><div className="spinner small"></div><p>AIが要約を生成中...</p></div>}
-                    {summaryError && <p className="error-text">{summaryError}</p>}
-                    {lastSummary && (
-                        <div className="memo-summary">
-                            <strong>AIによる要約:</strong>
-                            <p>{lastSummary.summary}</p>
+            <h2>{selectedCard.name}様との通話メモ</h2>
+            <div className="memo-list">
+                {localMemos.length > 0 ? (
+                    localMemos.sort((a,b) => b.id - a.id).map(memo => (
+                        <div key={memo.id} className="memo-item">
+                            <p className="memo-timestamp">{memo.timestamp}</p>
+                            {memo.summary && (
+                                <div className="memo-summary">
+                                    <p className="summary-title"><strong>📝 AIによる要約</strong></p>
+                                    <p>{memo.summary}</p>
+                                </div>
+                            )}
+                            <p className="memo-content">{memo.content}</p>
                         </div>
+                    ))
+                ) : (
+                    <p className="no-memos">まだメモはありません。</p>
+                )}
+            </div>
+            <div className="memo-input-area">
+                <textarea
+                    value={newMemoContent}
+                    onChange={(e) => setNewMemoContent(e.target.value)}
+                    placeholder={isRecording ? "音声入力中..." : "ここにメモを入力..."}
+                    rows={8}
+                />
+                <div className="memo-controls">
+                    <button onClick={handleSaveMemo} className="control-button primary" disabled={!newMemoContent.trim()}>保存</button>
+                    {isRecording ? (
+                        <button onClick={handleStopRecording} className="control-button recording">
+                            <span className="record-indicator"></span>録音停止
+                        </button>
+                    ) : (
+                        <button onClick={handleStartRecording} className="control-button">
+                            <span className="mic-icon">🎤</span>録音開始
+                        </button>
                     )}
                 </div>
             </div>
-            <div className="memo-controls">
-                <button
-                    className={`control-button mic-button ${isRecording ? 'recording' : ''}`}
-                    onClick={handleToggleRecording}
-                    title="音声入力"
-                >
-                    🎤
-                </button>
-                <button className="control-button" onClick={handleSummarize} disabled={isSummarizing || !currentMemo.trim()}>AIで要約</button>
-                <button className="control-button" onClick={handleSaveMemo} disabled={!currentMemo.trim()}>メモを保存</button>
-                <button className="control-button" onClick={handleExport}>エクスポート</button>
-            </div>
-            <button className="back-button" onClick={goBack}>戻る</button>
+            <button className="back-button" onClick={goBack}>詳細に戻る</button>
         </div>
     );
 };
 
-// --- New Components for Policy Analysis ---
+// --- Analysis Tool Screens ---
 
 const AnalysisToolScreen: FC = () => {
-    const { goBack, handleAddImageToAnalysis, currentPolicyAnalysis } = useAppContext();
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const overlayRef = useRef<HTMLDivElement>(null);
-    const [stream, setStream] = useState<MediaStream | null>(null);
-    
-    useEffect(() => {
-        let isMounted = true;
-        const startCamera = async () => {
-            if (stream) stream.getTracks().forEach(track => track.stop());
-            try {
-                const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-                if (isMounted) {
-                    setStream(mediaStream);
-                    if (videoRef.current) videoRef.current.srcObject = mediaStream;
-                }
-            } catch (error) {
-                console.error("Error accessing camera:", error);
-                alert("カメラにアクセスできませんでした。");
-            }
-        };
-        startCamera();
-        return () => { 
-            isMounted = false;
-            if (stream) stream.getTracks().forEach(track => track.stop()); 
-        };
-    }, []);
+    const { goBack, handleAddImageToAnalysis, cancelCurrentAnalysis } = useAppContext();
+    const [isCameraActive, setIsCameraActive] = useState(false);
+    const html5QrcodeRef = useRef<any>(null);
+    const videoRef = useRef<HTMLDivElement>(null);
 
-    const handleCapture = () => {
-        if (!videoRef.current || !overlayRef.current) return;
-
-        const video = videoRef.current;
-        const overlay = overlayRef.current;
-        const canvas = document.createElement('canvas');
-
-        // ビデオの実際の解像度と、画面上での表示サイズのアスペクト比を計算
-        const videoRatio = video.videoWidth / video.videoHeight;
-        const containerRatio = video.clientWidth / video.clientHeight;
-
-        // CSSの object-fit: cover を考慮して、画面に表示されているビデオソースの領域を計算
-        let sWidth = video.videoWidth;
-        let sHeight = video.videoHeight;
-        let sx = 0;
-        let sy = 0;
-
-        if (videoRatio > containerRatio) {
-            // ビデオがコンテナより横長の場合、表示高さに合わせ、左右がはみ出る
-            sHeight = video.videoHeight;
-            sWidth = sHeight * containerRatio;
-            sx = (video.videoWidth - sWidth) / 2;
-        } else {
-            // ビデオがコンテナより縦長の場合、表示幅に合わせ、上下がはみ出る
-            sWidth = video.videoWidth;
-            sHeight = sWidth / containerRatio;
-            sy = (video.videoHeight - sHeight) / 2;
-        }
-        
-        // 画面上のピクセルから、ビデオソース上のピクセルへの変換スケールを計算
-        const scale = sWidth / video.clientWidth;
-
-        // オーバーレイの画面上の座標を取得
-        const videoRect = video.getBoundingClientRect();
-        const overlayRect = overlay.getBoundingClientRect();
-
-        // オーバーレイの座標をビデオソース上の座標に変換
-        const cropSx = sx + (overlayRect.left - videoRect.left) * scale;
-        const cropSy = sy + (overlayRect.top - videoRect.top) * scale;
-        const cropSWidth = overlayRect.width * scale;
-        const cropSHeight = overlayRect.height * scale;
-
-        // キャンバスに正確に切り取った画像を描画
-        canvas.width = cropSWidth;
-        canvas.height = cropSHeight;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-            ctx.drawImage(
-                video,
-                cropSx, cropSy, cropSWidth, cropSHeight, // ソース領域
-                0, 0, cropSWidth, cropSHeight           // 描画先領域
+    const startCamera = async () => {
+        if (!videoRef.current || isCameraActive) return;
+        try {
+            const html5Qrcode = new Html5Qrcode(videoRef.current.id);
+            html5QrcodeRef.current = html5Qrcode;
+            await html5Qrcode.start(
+                { facingMode: "environment" },
+                { fps: 10, qrbox: { width: 400, height: 250 } },
+                () => {}, () => {}
             );
-            const imageDataUrl = canvas.toDataURL('image/jpeg');
-            handleAddImageToAnalysis(imageDataUrl);
+            setIsCameraActive(true);
+        } catch (err) {
+            console.error("Camera start failed:", err);
+            alert("カメラの起動に失敗しました。カメラの権限が許可されているか確認してください。");
+        }
+    };
+
+    const stopCamera = () => {
+        if (html5QrcodeRef.current && isCameraActive) {
+            html5QrcodeRef.current.stop().then(() => {
+                setIsCameraActive(false);
+                html5QrcodeRef.current = null;
+            }).catch((err: any) => console.error("Camera stop failed", err));
         }
     };
     
+    useEffect(() => {
+        startCamera();
+        return () => stopCamera();
+    }, []);
+
+    const handleCapture = () => {
+        if (!html5QrcodeRef.current || !isCameraActive) return;
+        const videoElement = document.getElementById(videoRef.current!.id)?.querySelector('video');
+        if (videoElement) {
+            const canvas = document.createElement('canvas');
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            canvas.getContext('2d')?.drawImage(videoElement, 0, 0);
+            const dataUrl = canvas.toDataURL('image/jpeg');
+            handleAddImageToAnalysis(dataUrl);
+            stopCamera();
+        }
+    };
 
     return (
-        <div className="add-card-screen">
-            <h2>書類の撮影 ({currentPolicyAnalysis?.images.length + 1}ページ目)</h2>
-            <div className="capturing-view">
-                <div className="camera-container">
-                    <video ref={videoRef} autoPlay playsInline className="camera-feed"></video>
-                    <div ref={overlayRef} className="camera-overlay"></div>
-                </div>
-                <div className="camera-controls">
-                    <button className="control-button primary" onClick={handleCapture}>撮影して分析</button>
-                    <button className="control-button" onClick={goBack}>キャンセル</button>
-                </div>
+        <div className="add-card-screen capturing-view">
+            <p className="description-text">分析したい書類を枠に合わせてください。</p>
+            <div className="camera-container">
+                <div id="camera-feed-container" ref={videoRef} className="camera-feed"></div>
+                <div className="camera-overlay"></div>
             </div>
-             <div className="privacy-notice" style={{marginTop: '16px'}}>
-                <span className="privacy-icon">🔒</span>
-                ご安心ください：撮影された画像は情報の抽出処理にのみ使用され、GoogleのAIモデルの再学習や第三者への共有には使用されません。通信は暗号化され安全に保護されています。
+            <div className="camera-controls">
+                <button className="control-button primary" onClick={handleCapture}>撮影して分析</button>
             </div>
+             <div className="privacy-notice">
+                <span className="privacy-icon">ℹ️</span>
+                <span>撮影された画像は暗号化され、安全にサーバーへ送信されます。データ抽出後に画像はサーバーから削除されます。</span>
+            </div>
+            <button className="back-button" onClick={cancelCurrentAnalysis}>分析を中止</button>
         </div>
     );
 };
 
 const DynamicAnalysisScreen: FC = () => {
-    const { currentPolicyAnalysis, cancelCurrentAnalysis, navigateTo, handleSaveCurrentAnalysis } = useAppContext();
+    const { currentPolicyAnalysis, handleAddImageToAnalysis, handleSaveCurrentAnalysis, cancelCurrentAnalysis, goBack } = useAppContext();
+    const [analysisTitle, setAnalysisTitle] = useState('');
     
-    if (!currentPolicyAnalysis) return null;
-
-    const handleSave = () => {
-        const defaultTitle = currentPolicyAnalysis.fields.find(f => f.key.includes('保険種類') || f.key.includes('契約者'))?.value || `分析結果 ${new Date().toLocaleDateString()}`;
-        const title = prompt("この分析のタイトルを入力してください:", defaultTitle);
-        if (title) {
-            handleSaveCurrentAnalysis(title);
-        }
-    }
+    if (!currentPolicyAnalysis) return null; // Should not happen
 
     return (
         <div className="dynamic-analysis-screen">
-            <h2>AI分析結果</h2>
+            <h2>分析結果</h2>
             <div className="analysis-content">
                 <div className="analysis-images-pane">
-                    <h3>撮影済みページ ({currentPolicyAnalysis.images.length}枚)</h3>
+                    <h3>分析した画像 ({currentPolicyAnalysis.images.length}枚)</h3>
                     <div className="image-thumbnail-list">
-                        {currentPolicyAnalysis.images.map((imgSrc, index) => (
-                            <img key={index} src={imgSrc} alt={`Page ${index + 1}`} className="thumbnail" />
+                        {currentPolicyAnalysis.images.map((img, index) => (
+                            <img key={index} src={img} alt={`Analyzed image ${index + 1}`} className="thumbnail" />
                         ))}
                     </div>
-                    <button className="control-button secondary full-width" onClick={() => navigateTo('analysisTool')}>
-                        <span className="button-icon">➕</span> ページを追加撮影
-                    </button>
                 </div>
-
                 <div className="analysis-fields-pane">
                     <h3>抽出された情報</h3>
-                    <div className="analysis-fields-content">
-                        {currentPolicyAnalysis.isAnalyzing && (
-                             <div className="loading-container"><div className="spinner"></div><p>AIが情報を分析中...</p></div>
-                        )}
-                        {currentPolicyAnalysis.error && (
-                            <div className="error-container"><p>{currentPolicyAnalysis.error}</p></div>
-                        )}
-                        {!currentPolicyAnalysis.isAnalyzing && currentPolicyAnalysis.fields.length === 0 && !currentPolicyAnalysis.error && (
-                            <p className="placeholder-text">AIによる分析結果がここに表示されます。</p>
-                        )}
-                        {currentPolicyAnalysis.fields.length > 0 && (
+                    {currentPolicyAnalysis.isAnalyzing ? (
+                        <div className="loading-container">
+                            <div className="spinner"></div>
+                            <p>AIが情報を抽出中...</p>
+                        </div>
+                    ) : currentPolicyAnalysis.error ? (
+                        <div className="error-container">{currentPolicyAnalysis.error}</div>
+                    ) : (
+                        <div className="key-value-list">
+                            {currentPolicyAnalysis.fields.map(field => (
+                                <div key={field.id} className="key-value-item">
+                                    <span className="item-key">{field.key}</span>
+                                    <span className="item-value">{field.value}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+            <div className="confirm-controls">
+                <input
+                    type="text"
+                    className="form-control"
+                    placeholder="分析データのタイトル"
+                    value={analysisTitle}
+                    onChange={(e) => setAnalysisTitle(e.target.value)}
+                    style={{ flexGrow: 2, padding: '12px', border: '1px solid var(--border-color)', borderRadius: '8px' }}
+                />
+                <button
+                    className="control-button primary"
+                    onClick={() => handleSaveCurrentAnalysis(analysisTitle)}
+                    disabled={currentPolicyAnalysis.isAnalyzing || currentPolicyAnalysis.fields.length === 0}
+                >
+                    この内容で保存
+                </button>
+            </div>
+            <div className="detail-actions" style={{justifyContent: 'space-between'}}>
+                 <button className="control-button secondary" onClick={() => goBack()} disabled={currentPolicyAnalysis.isAnalyzing}>
+                    さらに撮影する
+                </button>
+                <button className="control-button delete" onClick={cancelCurrentAnalysis}>
+                    分析を中止
+                </button>
+            </div>
+        </div>
+    );
+};
+
+const AnalysisListScreen: FC = () => {
+    const { policies, handleSelectPolicy, goBack } = useAppContext();
+
+    return (
+        <div className="card-list-screen">
+            <h2>分析データ一覧</h2>
+            {policies.length === 0 ? (
+                <div className="placeholder-screen">
+                    <p>まだ分析データがありません。「書類を分析」から新しい分析を開始してください。</p>
+                </div>
+            ) : (
+                <div className="card-list">
+                    {policies.map(policy => (
+                         <div key={policy.id} className="card-list-item-container simple" onClick={() => handleSelectPolicy(policy.id)} role="button">
+                            <div className="card-list-item">
+                                <div className="card-item-name">{policy.title}</div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+            <button className="back-button" onClick={goBack}>戻る</button>
+        </div>
+    );
+}
+
+const PolicyDetailScreen: FC = () => {
+    const { policies, selectedPolicyId, handleUpdatePolicy, handleDeletePolicy, goBack } = useAppContext();
+    const [isEditing, setIsEditing] = useState(false);
+    const selectedPolicy = policies.find(p => p.id === selectedPolicyId);
+    const [editablePolicy, setEditablePolicy] = useState<PolicyData | null>(JSON.parse(JSON.stringify(selectedPolicy || null)));
+
+    if (!selectedPolicy || !editablePolicy) return null;
+
+    const handleFieldChange = (fieldId: number, key: 'key' | 'value', value: string) => {
+        setEditablePolicy(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                fields: prev.fields.map(f => f.id === fieldId ? { ...f, [key]: value } : f)
+            };
+        });
+    };
+    
+    const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setEditablePolicy(prev => prev ? { ...prev, title: e.target.value } : null);
+    }
+
+    const addField = () => {
+        setEditablePolicy(prev => {
+            if (!prev) return null;
+            const newField: PolicyField = { id: Date.now(), key: '', value: '' };
+            return { ...prev, fields: [...prev.fields, newField] };
+        });
+    };
+
+    const removeField = (fieldId: number) => {
+        setEditablePolicy(prev => prev ? { ...prev, fields: prev.fields.filter(f => f.id !== fieldId) } : null);
+    };
+
+    const onSave = () => {
+        handleUpdatePolicy(editablePolicy);
+        setIsEditing(false);
+    };
+
+    const onCancel = () => {
+        setEditablePolicy(JSON.parse(JSON.stringify(selectedPolicy)));
+        setIsEditing(false);
+    };
+
+
+    return (
+        <div className="policy-detail-screen">
+             <div className="form-group vertical" style={{marginBottom: '16px'}}>
+                <label style={{fontWeight: 'bold'}}>タイトル</label>
+                <input
+                    type="text"
+                    value={editablePolicy.title}
+                    onChange={handleTitleChange}
+                    readOnly={!isEditing}
+                    className="form-control"
+                    style={{ fontSize: '1.5rem', fontWeight: 'bold', padding: '8px' }}
+                />
+            </div>
+
+            <div className="analysis-content">
+                <div className="analysis-images-pane">
+                    <h3>分析した画像 ({selectedPolicy.imageUrls.length}枚)</h3>
+                    <div className="image-thumbnail-list">
+                        {selectedPolicy.imageUrls.map((img, index) => (
+                            <img key={index} src={img} alt={`Policy image ${index + 1}`} className="thumbnail" />
+                        ))}
+                    </div>
+                </div>
+                <div className="analysis-fields-pane">
+                    <div className="editable-fields-section">
+                        <h3>抽出された情報</h3>
+                        {isEditing ? (
+                            <div className="editable-key-value-list">
+                                {editablePolicy.fields.map(field => (
+                                    <div key={field.id} className="editable-key-value-item">
+                                        <input
+                                            type="text"
+                                            placeholder="項目名"
+                                            value={field.key}
+                                            onChange={(e) => handleFieldChange(field.id, 'key', e.target.value)}
+                                            className="key-input"
+                                        />
+                                        <textarea
+                                            placeholder="内容"
+                                            value={field.value}
+                                            onChange={(e) => handleFieldChange(field.id, 'value', e.target.value)}
+                                            className="value-input"
+                                            rows={1}
+                                        />
+                                        <button onClick={() => removeField(field.id)} className="delete-field-btn" aria-label="Delete field">&times;</button>
+                                    </div>
+                                ))}
+                                <button onClick={addField} className="control-button secondary add-field-btn">
+                                    <span className="button-icon">➕</span>項目を追加
+                                </button>
+                            </div>
+                        ) : (
                             <div className="key-value-list">
-                                {currentPolicyAnalysis.fields.map(field => (
+                                {selectedPolicy.fields.map(field => (
                                     <div key={field.id} className="key-value-item">
-                                        <strong className="item-key">{field.key}</strong>
+                                        <span className="item-key">{field.key}</span>
                                         <span className="item-value">{field.value}</span>
                                     </div>
                                 ))}
@@ -2156,409 +2214,289 @@ const DynamicAnalysisScreen: FC = () => {
                     </div>
                 </div>
             </div>
-
-            <div className="confirm-controls">
-                <button className="control-button" onClick={cancelCurrentAnalysis}>分析を中止</button>
-                <button 
-                    className="control-button primary" 
-                    onClick={handleSave}
-                    disabled={currentPolicyAnalysis.isAnalyzing || currentPolicyAnalysis.images.length === 0}>
-                    保存
-                </button>
-            </div>
-        </div>
-    );
-};
-
-const PolicyDetailScreen: FC = () => {
-    const { policies, selectedPolicyId, handleUpdatePolicy, handleDeletePolicy, goBack } = useAppContext();
-    const policy = policies.find(p => p.id === selectedPolicyId);
-    
-    const [title, setTitle] = useState(policy?.title || '');
-    const [fields, setFields] = useState<PolicyField[]>(policy?.fields.map(f => ({...f})) || []);
-    const [showExportModal, setShowExportModal] = useState(false);
-    
-    if (!policy) {
-        return <div className="placeholder-screen"><p>分析データが見つかりません。</p><button className="back-button" onClick={goBack}>戻る</button></div>;
-    }
-    
-    const handleFieldChange = (id: number, type: 'key' | 'value', text: string) => {
-        setFields(fields.map(f => f.id === id ? { ...f, [type]: text } : f));
-    };
-
-    const handleAddField = () => {
-        const newField: PolicyField = { id: Date.now(), key: '', value: '' };
-        setFields([...fields, newField]);
-    };
-
-    const handleDeleteField = (id: number) => {
-        setFields(fields.filter(f => f.id !== id));
-    };
-
-    const onUpdate = () => {
-        const updatedPolicy: PolicyData = { ...policy, title, fields };
-        handleUpdatePolicy(updatedPolicy);
-    };
-
-    const handleExport = (format: 'csv' | 'txt') => {
-        if (!policy) return;
-
-        let content = '';
-        let mimeType = '';
-        let filename = `analysis_${title.replace(/\s/g, '_')}_${new Date().toISOString().split('T')[0]}`;
-
-        if (format === 'csv') {
-            const header = ['id', 'title', 'imageUrls', 'fields'];
-            const row = [
-                formatCsvField(policy.id),
-                formatCsvField(title),
-                formatCsvField(policy.imageUrls.join(';')),
-                formatCsvField(fields.map(f => `${f.key}:${f.value}`).join(';'))
-            ];
-            content = [header.join(','), row.join(',')].join('\n');
-            mimeType = 'text/csv;charset=utf-8;';
-            filename += '.csv';
-        } else { // txt
-            content = `--- Analysis Data: ${title} ---\n`;
-            content += `Image URLs: ${policy.imageUrls.join(', ')}\n\n`;
-            content += `--- Fields ---\n`;
-            fields.forEach(field => {
-                content += `${field.key}: ${field.value}\n`;
-            });
-            content += '---------------------------\n';
-            mimeType = 'text/plain;charset=utf-8;';
-            filename += '.txt';
-        }
-
-        const blob = new Blob([content], { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        setShowExportModal(false);
-    };
-
-    return (
-        <div className="policy-detail-screen">
-            <h2>分析データの編集</h2>
-            <div className="form-group vertical">
-                <label htmlFor="policyTitle">タイトル</label>
-                <input
-                    type="text"
-                    id="policyTitle"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                />
-            </div>
-
-            <div className="analysis-images-pane">
-                <h3>撮影済みページ ({policy.imageUrls.length}枚)</h3>
-                <div className="image-thumbnail-list">
-                    {policy.imageUrls.map((imgSrc, index) => (
-                        <img key={index} src={imgSrc} alt={`Page ${index + 1}`} className="thumbnail" />
-                    ))}
-                </div>
-            </div>
-
-            <div className="editable-fields-section">
-                <h3>抽出情報</h3>
-                <div className="editable-key-value-list">
-                    {fields.map(field => (
-                        <div key={field.id} className="editable-key-value-item">
-                            <input
-                                type="text"
-                                value={field.key}
-                                onChange={(e) => handleFieldChange(field.id, 'key', e.target.value)}
-                                placeholder="項目名"
-                                className="key-input"
-                            />
-                            <textarea
-                                value={field.value}
-                                onChange={(e) => handleFieldChange(field.id, 'value', e.target.value)}
-                                placeholder="内容"
-                                className="value-input"
-                                rows={1}
-                            />
-                            <button onClick={() => handleDeleteField(field.id)} className="delete-field-btn">×</button>
-                        </div>
-                    ))}
-                </div>
-                <button onClick={handleAddField} className="control-button secondary add-field-btn">
-                    <span className="button-icon">➕</span> 項目を追加
-                </button>
-            </div>
             
-            <div className="confirm-controls">
-                <button className="control-button delete" onClick={() => handleDeletePolicy(policy.id)}>この分析を削除</button>
-                <button className="control-button" onClick={() => setShowExportModal(true)}>エクスポート</button>
-                <button className="control-button primary" onClick={onUpdate}>更新</button>
-            </div>
-            <button className="back-button" onClick={goBack}>戻る</button>
-
-            {showExportModal && (
-                <div className="modal-overlay" onClick={() => setShowExportModal(false)}>
-                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                        <h3>エクスポート形式を選択</h3>
-                        <div className="export-options">
-                            <button className="control-button primary" onClick={() => handleExport('csv')}>CSVファイル</button>
-                            <button className="control-button" onClick={() => handleExport('txt')}>テキストファイル</button>
-                        </div>
-                         <button className="control-button" style={{marginTop: '16px'}} onClick={() => setShowExportModal(false)}>閉じる</button>
-                    </div>
+            <div className="detail-actions policy-actions">
+                <button className="control-button delete" onClick={() => handleDeletePolicy(selectedPolicy.id)}>削除</button>
+                <div className="main-actions">
+                    {isEditing ? (
+                        <>
+                            <button className="control-button" onClick={onCancel}>キャンセル</button>
+                            <button className="control-button primary" onClick={onSave}>保存</button>
+                        </>
+                    ) : (
+                        <button className="control-button primary" onClick={() => setIsEditing(true)}>編集</button>
+                    )}
                 </div>
-            )}
+            </div>
+
+            <button className="back-button" onClick={goBack}>一覧に戻る</button>
         </div>
     );
 };
 
-
-const AnalysisListScreen: FC = () => {
-    const { policies, handleSelectPolicy, goBack } = useAppContext();
-
-    return (
-        <div className="card-list-screen">
-            <h2>分析済み証券一覧</h2>
-            {policies.length === 0 ? (
-                <div className="placeholder-screen">
-                    <p>まだ分析された証券がありません。「支援ツール」から新しい証券を分析してください。</p>
-                </div>
-            ) : (
-                <div className="card-list">
-                    {policies.map(policy => (
-                        <div key={policy.id} className="card-list-item-container simple" onClick={() => handleSelectPolicy(policy.id)}>
-                           <div className="card-list-item">
-                               <div className="card-item-company">{policy.title}</div>
-                               <div className="card-item-name">{(policy.fields || []).slice(0, 2).map(f => f.value || '').join(' - ') || '詳細を見る'}</div>
-                           </div>
-                       </div>
-                   ))}
-                </div>
-            )}
-            <button className="back-button" onClick={goBack}>戻る</button>
-        </div>
-    );
-};
-
-
-const ClassificationModal: FC = () => {
-    const { cardForClassification, cancelClassification, handleSaveCard, handleUpdateCard } = useAppContext();
-    const [selected, setSelected] = useState<string>('');
-
-    if (!cardForClassification) return null;
-
-    const handleSave = () => {
-        if (!selected) {
-            alert('分類を選択してください。');
-            return;
-        }
-        const finalData = { ...cardForClassification.data, classification: selected };
-        
-        if (cardForClassification.isEditing && cardForClassification.editingId) {
-            handleUpdateCard({ 
-                ...finalData, 
-                id: cardForClassification.editingId, 
-                imageUrl: cardForClassification.images?.front || null,
-                imageUrlBack: cardForClassification.images?.back || null,
-            });
-        } else {
-            handleSaveCard(finalData);
-        }
-    };
-    
-    return (
-        <div className="modal-overlay" onClick={cancelClassification}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                <h3>名刺の分類を選択</h3>
-                <p>この名刺をどのカテゴリに分類しますか？</p>
-                <div className="classification-selector">
-                    {classifications.map(c => (
-                        <button 
-                            key={c}
-                            className={`classification-select-button ${selected === c ? 'active' : ''}`}
-                            onClick={() => setSelected(c)}
-                        >
-                            {c}
-                        </button>
-                    ))}
-                </div>
-                <div className="modal-actions">
-                    <button className="control-button" onClick={cancelClassification}>キャンセル</button>
-                    <button className="control-button primary" onClick={handleSave} disabled={!selected}>保存</button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// --- New Component for Excel Integration ---
 const ExcelIntegrationScreen: FC = () => {
-    const { goBack } = useAppContext();
-    const [step, setStep] = useState(1);
-    const [excelFile, setExcelFile] = useState<File | null>(null);
-    const [csvFile, setCsvFile] = useState<File | null>(null);
+    const { goBack, cards, policies } = useAppContext();
+
+    // Step 1 states
+    const [originalFile, setOriginalFile] = useState<File | null>(null);
+    const [workbook, setWorkbook] = useState<any>(null);
+    const [sheetNames, setSheetNames] = useState<string[]>([]);
+    const [selectedSheet, setSelectedSheet] = useState<string>('');
+    const [startCell, setStartCell] = useState<string>('A1');
+
+    // Step 2 states
     const [excelHeaders, setExcelHeaders] = useState<string[]>([]);
-    const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
-    const [excelData, setExcelData] = useState<any[]>([]);
-    const [csvData, setCsvData] = useState<any[]>([]);
-    const [columnMap, setColumnMap] = useState<Record<string, string>>({});
+    const [sourceDataType, setSourceDataType] = useState<'cards' | 'policies'>('cards');
+    const [sourceHeaders, setSourceHeaders] = useState<string[]>([]);
+    const [sourceData, setSourceData] = useState<any[]>([]);
+    const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+
+    // Step 3 states
+    const [mappedData, setMappedData] = useState<any[]>([]);
+
+    // General states
+    const [step, setStep] = useState(1);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    
+    useEffect(() => {
+        let data: any[], headers: Set<string>;
+        if (sourceDataType === 'cards') {
+            data = cards;
+            const headersSet = new Set<string>();
+            cards.forEach(card => Object.keys(card).forEach(key => headersSet.add(key)));
+            headers = headersSet;
+        } else {
+             data = policies.map(p => {
+                 const flat: any = { id: p.id, title: p.title };
+                 p.fields.forEach(f => {
+                     if(f.key) flat[f.key] = f.value;
+                 });
+                 return flat;
+             });
+            const headersSet = new Set<string>();
+            data.forEach(item => Object.keys(item).forEach(key => headersSet.add(key)));
+            headers = headersSet;
+        }
+        setSourceData(data);
+        setSourceHeaders(Array.from(headers).sort());
+    }, [sourceDataType, cards, policies]);
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'excel' | 'csv') => {
-        const file = e.target.files?.[0] || null;
-        if (type === 'excel') setExcelFile(file);
-        else setCsvFile(file);
+    const resetState = () => {
+        setStep(1);
+        setOriginalFile(null);
+        setWorkbook(null);
+        setSheetNames([]);
+        setSelectedSheet('');
+        setExcelHeaders([]);
+        setColumnMapping({});
+        setMappedData([]);
+        setError(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
-    const processFiles = async () => {
-        if (!excelFile || !csvFile) return;
-        setIsLoading(true);
-        setError(null);
-        try {
-            // Process Excel
-            const excelReader = new FileReader();
-            excelReader.onload = async (e) => {
-                const data = e.target?.result;
-                const workbook = XLSX.read(data, { type: 'binary' });
-                const sheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[sheetName];
-                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-                if (jsonData.length === 0) throw new Error("Excelファイルが空です。");
-                const headers = jsonData[0] as string[];
-                setExcelHeaders(headers);
-                setExcelData(XLSX.utils.sheet_to_json(worksheet));
-
-                // Process CSV
-                const csvReader = new FileReader();
-                csvReader.onload = async (e_csv) => {
-                    const csvText = e_csv.target?.result as string;
-                    const csv_workbook = XLSX.read(csvText, { type: 'string' });
-                    const csv_sheetName = csv_workbook.SheetNames[0];
-                    const csv_worksheet = csv_workbook.Sheets[csv_sheetName];
-                    const csv_jsonData = XLSX.utils.sheet_to_json(csv_worksheet, { header: 1 });
-                    if (csv_jsonData.length === 0) throw new Error("CSVファイルが空です。");
-                    const csv_headers = csv_jsonData[0] as string[];
-                    setCsvHeaders(csv_headers);
-                    setCsvData(XLSX.utils.sheet_to_json(csv_worksheet));
-                    
-                    // Get AI mapping
-                    try {
-                        const result = await callApiProxy('mapCsvToExcel', { csvHeaders: csv_headers, excelHeaders: headers });
-                        setColumnMap(result.mapping || {});
-                        setStep(2);
-                    } catch (aiError) {
-                        console.error("AI mapping failed:", aiError);
-                        // Fallback to empty mapping
-                        setColumnMap({});
-                        setStep(2);
-                    } finally {
-                        setIsLoading(false);
-                    }
-                };
-                csvReader.readAsText(csvFile);
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setIsLoading(true);
+            setError(null);
+            setOriginalFile(file);
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const data = event.target?.result;
+                    const wb = XLSX.read(data, { type: 'array' });
+                    setWorkbook(wb);
+                    setSheetNames(wb.SheetNames);
+                    setSelectedSheet(wb.SheetNames[0]);
+                    setIsLoading(false);
+                } catch (err: any) {
+                    setError(`ファイルの読み込みに失敗しました: ${err.message}`);
+                    setIsLoading(false);
+                }
             };
-            excelReader.readAsBinaryString(excelFile);
+            reader.onerror = () => {
+                 setError('ファイルの読み込み中にエラーが発生しました。');
+                 setIsLoading(false);
+            };
+            reader.readAsArrayBuffer(file);
+        }
+    };
+
+    const handleProceedToMapping = () => {
+        if (!workbook || !selectedSheet) {
+            setError('ファイルとシートを選択してください。');
+            return;
+        }
+        try {
+            const ws = workbook.Sheets[selectedSheet];
+            const jsonData: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", range: startCell });
+            
+            if (jsonData.length === 0) {
+                 setError('選択された範囲にデータが見つかりません。開始セルが正しいか確認してください。');
+                 return;
+            }
+            const headers = jsonData[0].map(String);
+            setExcelHeaders(headers);
+            setStep(2);
+        } catch(err: any) {
+            setError(`シートの解析に失敗しました: ${err.message}. 開始セルの形式が正しいか確認してください(例: A1)。`);
+        }
+    };
+    
+    const handleAutoMap = async () => {
+        setIsLoading(true);
+        try {
+            const result = await callApiProxy('mapCsvToExcel', {
+                csvHeaders: sourceHeaders,
+                excelHeaders: excelHeaders,
+            });
+            const newMapping: Record<string, string> = {};
+            excelHeaders.forEach(eh => {
+                const foundCsvHeader = Object.keys(result.mapping).find(
+                    (csvKey) => result.mapping[csvKey] === eh
+                );
+                newMapping[eh] = foundCsvHeader || '';
+            });
+            setColumnMapping(newMapping);
+
         } catch (err: any) {
-            setError(`ファイルの処理中にエラーが発生しました: ${err.message}`);
+            setError('AIによる自動マッピングに失敗しました。');
+        } finally {
             setIsLoading(false);
         }
     };
     
-    const handleMapChange = (csvHeader: string, excelHeader: string) => {
-        setColumnMap(prev => ({ ...prev, [csvHeader]: excelHeader }));
-    };
-
-    const generateNewExcel = () => {
-        // Create a copy of the original Excel data
-        const newSheetData = [...excelData];
-
-        // Map CSV data to new rows
-        csvData.forEach(csvRow => {
+    const handlePreview = () => {
+        const data = sourceData.map(sourceRow => {
             const newRow: Record<string, any> = {};
             excelHeaders.forEach(excelHeader => {
-                 // Find which CSV header is mapped to this Excel header
-                const mappedCsvHeader = Object.keys(columnMap).find(key => columnMap[key] === excelHeader);
-                if (mappedCsvHeader && csvRow[mappedCsvHeader] !== undefined) {
-                    newRow[excelHeader] = csvRow[mappedCsvHeader];
+                const sourceHeader = columnMapping[excelHeader];
+                if (sourceHeader && sourceRow[sourceHeader] !== undefined) {
+                    const value = sourceRow[sourceHeader];
+                    // Handle complex objects like customFields
+                    if (Array.isArray(value)) {
+                         if (sourceHeader === 'customFields') {
+                             newRow[excelHeader] = value.map(cf => `${cf.key}:${cf.value}`).join('; ');
+                         } else {
+                            newRow[excelHeader] = value.join(', ');
+                         }
+                    } else {
+                        newRow[excelHeader] = value;
+                    }
                 } else {
-                    newRow[excelHeader] = ''; // Or some default value
+                    newRow[excelHeader] = ''; // Fill with empty string if no mapping or data
                 }
             });
-            newSheetData.push(newRow);
+            return newRow;
         });
-
-        // Create new workbook and worksheet
-        const newWorksheet = XLSX.utils.json_to_sheet(newSheetData, { header: excelHeaders });
-        const newWorkbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, 'Updated Data');
-
-        // Trigger download
-        XLSX.writeFile(newWorkbook, `Updated_${excelFile?.name || 'data.xlsx'}`);
+        setMappedData(data);
+        setStep(3);
     };
+    
+    const handleDownload = () => {
+        if (!mappedData.length) {
+            alert('ダウンロードするデータがありません。');
+            return;
+        }
+        // This process creates a clean new file, preventing old data from remaining.
+        const newWs = XLSX.utils.json_to_sheet(mappedData, { header: excelHeaders });
+        const newWb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(newWb, newWs, selectedSheet || 'Sheet1');
+        XLSX.writeFile(newWb, `連携済み_${originalFile?.name || 'data.xlsx'}`);
+    };
+
+    const handleAddRow = () => {
+        const newRow = excelHeaders.reduce((acc, header) => ({ ...acc, [header]: '' }), {});
+        setMappedData(prev => [...prev, newRow]);
+    };
+
+    const handleRemoveRow = (index: number) => {
+        setMappedData(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleCellChange = (index: number, header: string, value: string) => {
+        setMappedData(prev => prev.map((row, i) => i === index ? { ...row, [header]: value } : row));
+    }
+
 
     return (
         <div className="excel-integration-screen">
-            <h2>Excelデータ連携ツール</h2>
+            <h2>Excel連携ツール</h2>
 
-            {error && <div className="error-container" style={{marginBottom: '16px'}}>{error}</div>}
+            {error && <div className="error-container" style={{marginBottom: '16px', padding: '10px', backgroundColor: '#f8d7da', border: '1px solid #f5c6cb', borderRadius: '4px' }}>{error}</div>}
 
-            {isLoading && (
-                 <div className="loading-container"><div className="spinner"></div><p>ファイルを処理中...</p></div>
-            )}
-            
-            {!isLoading && step === 1 && (
+            {step === 1 && (
                 <div className="step-container">
-                    <h3>ステップ1: ファイルの選択</h3>
-                    <p>データを追加したいExcelファイルと、元になるCSVファイルを選択してください。</p>
+                    <h3>Step 1: 元となるExcelファイルをアップロード</h3>
+                    <p>データを入力したいExcelのテンプレートファイルをアップロードしてください。</p>
                     <div className="file-upload-area">
                         <div className="file-input-wrapper">
-                            <label htmlFor="excel-file">① 対象のExcelファイル (.xlsx)</label>
-                            <input id="excel-file" type="file" accept=".xlsx" onChange={(e) => handleFileChange(e, 'excel')} />
-                            {excelFile && <span className="file-name">{excelFile.name}</span>}
+                             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".xlsx, .xls" />
+                             {originalFile && <span className="file-name">{originalFile.name}</span>}
                         </div>
-                        <div className="file-input-wrapper">
-                            <label htmlFor="csv-file">② 名刺データCSVファイル (.csv)</label>
-                            <input id="csv-file" type="file" accept=".csv" onChange={(e) => handleFileChange(e, 'csv')} />
-                            {csvFile && <span className="file-name">{csvFile.name}</span>}
+                         <div className="form-group vertical" style={{alignItems: 'flex-start', marginTop: '16px'}}>
+                            <label htmlFor="startCell">データ開始セル (任意)</label>
+                            <input
+                                type="text"
+                                id="startCell"
+                                value={startCell}
+                                onChange={e => setStartCell(e.target.value)}
+                                placeholder="例: A1"
+                            />
+                            <p className="checkbox-description" style={{marginTop: '4px'}}>表のヘッダー行が始まるセルを指定してください。空欄の場合はA1から開始します。</p>
                         </div>
+                        {workbook && (
+                            <div className="form-group vertical" style={{alignItems: 'flex-start'}}>
+                                <label htmlFor="sheet-select">シートを選択</label>
+                                <select id="sheet-select" value={selectedSheet} onChange={e => setSelectedSheet(e.target.value)}>
+                                    {sheetNames.map(name => <option key={name} value={name}>{name}</option>)}
+                                </select>
+                            </div>
+                        )}
                     </div>
                     <div className="step-controls">
-                        <button className="control-button primary" onClick={processFiles} disabled={!excelFile || !csvFile}>
-                            次へ進む (列のマッピング)
+                        <button className="control-button primary" onClick={handleProceedToMapping} disabled={!workbook || isLoading}>
+                            {isLoading ? <div className="spinner small inline"></div> : '次へ'}
                         </button>
                     </div>
                 </div>
             )}
+            
+            {step >= 2 && (
+                 <div className="step-controls space-between">
+                    <button className="control-button" onClick={resetState}>最初からやり直す</button>
+                 </div>
+            )}
 
-            {!isLoading && step === 2 && (
+            {step === 2 && (
                 <div className="step-container">
-                    <h3>ステップ2: 列の紐付け (マッピング)</h3>
-                    <p>AIが自動で列の対応関係を推測しました。内容を確認し、必要であれば修正してください。</p>
-                    <div className="column-mapping-area">
+                    <h3>Step 2: データのマッピング</h3>
+                    <p>Excelの列とアプリ内のデータを紐付けます。</p>
+                     <div className="form-group vertical" style={{alignItems: 'flex-start'}}>
+                        <label>連携するデータソース</label>
+                        <select value={sourceDataType} onChange={e => setSourceDataType(e.target.value as 'cards' | 'policies')}>
+                            <option value="cards">名刺データ</option>
+                            <option value="policies">分析データ</option>
+                        </select>
+                    </div>
+                    <button className="control-button secondary" onClick={handleAutoMap} disabled={isLoading} style={{margin: '16px 0'}}>
+                        {isLoading ? 'マッピング中...' : 'AIで自動マッピング'}
+                    </button>
+                    <div className="integration-table-container" style={{maxHeight: '400px'}}>
                         <table>
                             <thead>
-                                <tr>
-                                    <th>CSVの項目 (入力元)</th>
-                                    <th>Excelの項目 (入力先)</th>
-                                </tr>
+                                <tr><th>Excelの列</th><th>アプリのデータ</th></tr>
                             </thead>
                             <tbody>
-                                {csvHeaders.map(csvHeader => (
-                                    <tr key={csvHeader}>
-                                        <td>{csvHeader}</td>
+                                {excelHeaders.map(header => (
+                                    <tr key={header}>
+                                        <td>{header}</td>
                                         <td>
-                                            <select 
-                                                value={columnMap[csvHeader] || ''}
-                                                onChange={(e) => handleMapChange(csvHeader, e.target.value)}
-                                            >
-                                                <option value="">-- 紐付けない --</option>
-                                                {excelHeaders.map(excelHeader => (
-                                                    <option key={excelHeader} value={excelHeader}>{excelHeader}</option>
-                                                ))}
+                                            <select value={columnMapping[header] || ''} onChange={e => setColumnMapping(prev => ({...prev, [header]: e.target.value}))}>
+                                                <option value="">-- 選択しない --</option>
+                                                {sourceHeaders.map(sh => <option key={sh} value={sh}>{sh}</option>)}
                                             </select>
                                         </td>
                                     </tr>
@@ -2566,90 +2504,87 @@ const ExcelIntegrationScreen: FC = () => {
                             </tbody>
                         </table>
                     </div>
-                     <div className="step-controls space-between">
-                         <button className="control-button" onClick={() => setStep(1)}>戻る</button>
-                        <button className="control-button primary" onClick={generateNewExcel}>
-                            新しいExcelファイルを生成してダウンロード
-                        </button>
+                     <div className="step-controls">
+                        <button className="control-button primary" onClick={handlePreview}>プレビューに進む</button>
                     </div>
                 </div>
             )}
-            <button className="back-button" onClick={goBack}>メインメニューに戻る</button>
+            
+             {step === 3 && (
+                <div className="step-container">
+                    <h3>Step 3: プレビューとダウンロード</h3>
+                    <p>内容を確認し、問題なければダウンロードしてください。この画面で直接編集も可能です。</p>
+                    <div className="integration-table-container" style={{maxHeight: '500px'}}>
+                        <table>
+                            <thead>
+                                <tr>
+                                    {excelHeaders.map(h => <th key={h}>{h}</th>)}
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {mappedData.map((row, rowIndex) => (
+                                    <tr key={rowIndex}>
+                                        {excelHeaders.map(header => (
+                                            <td key={header}><input type="text" value={row[header]} onChange={(e) => handleCellChange(rowIndex, header, e.target.value)} className="cell-input" /></td>
+                                        ))}
+                                        <td><button className="delete-field-btn" onClick={() => handleRemoveRow(rowIndex)}>&times;</button></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                     <div className="step-controls space-between" style={{ marginTop: '16px' }}>
+                        <div>
+                            <button className="control-button secondary" onClick={handleAddRow}><span className="button-icon">➕</span>行を追加</button>
+                        </div>
+                        <button className="control-button primary" onClick={handleDownload}>ダウンロード</button>
+                    </div>
+                </div>
+            )}
+            
+            <button className="back-button" onClick={goBack}>メインに戻る</button>
         </div>
     );
 };
 
-
-
-// --- App Content Component ---
-const AppContent: FC = () => {
-    const { view } = useAppContext();
-
-    switch (view) {
-        case 'list': return <CardListScreen />;
-        case 'detail': return <CardDetailScreen />;
-        case 'recent': return <RecentHistoryScreen />;
-        case 'add': return <AddCardScreen />;
-        case 'confirm': return <ConfirmCardScreen />;
-        case 'memo': return <MemoScreen />;
-        case 'analysisTool': return <AnalysisToolScreen />;
-        case 'dynamicAnalysis': return <DynamicAnalysisScreen />;
-        case 'policyDetail': return <PolicyDetailScreen />;
-        case 'analysisList': return <AnalysisListScreen />;
-        case 'excelIntegration': return <ExcelIntegrationScreen />;
-        case 'main':
-        default: return <MainScreen />;
-    }
-};
-
-
 const App: FC = () => {
+    const { view } = useAppContext();
     return (
-        <AppProvider>
-            <div className="app-container">
-                <header className="app-header">
-                    <h1>名刺管理アプリ</h1>
-                    <span className="app-version">v3.2.1-beta</span>
-                </header>
-                <main className="content-area">
-                    <AppContentWrapper />
-                </main>
-            </div>
-        </AppProvider>
-    );
-};
-
-// This wrapper is necessary because the main App component provides the context,
-// but the component that USES the context (for goBack and history) must be a child.
-const AppContentWrapper: FC = () => {
-    const { goBack, history } = useAppContext();
-    const touchStartX = useRef(0);
-    const canGoBack = history.length > 1;
-
-    const handleTouchStart = (e: React.TouchEvent) => {
-        touchStartX.current = e.targetTouches[0].clientX;
-    };
-    
-    const handleTouchMove = (e: React.TouchEvent) => {
-        if (!canGoBack || touchStartX.current === 0) return;
-        const touchCurrentX = e.targetTouches[0].clientX;
-        const deltaX = touchCurrentX - touchStartX.current;
-        if (touchStartX.current < 50 && deltaX > 80) { // Check for swipe from left edge
-            goBack();
-            touchStartX.current = 0; // Prevent multiple triggers
-        }
-    };
-
-    return (
-        <div 
-            className="content-wrapper"
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-        >
-            <AppContent />
-            <ClassificationModal />
+        <div className="app-container">
+            <header className="app-header">
+                <h1>AI名刺・営業サポート</h1>
+                <span className="app-version">v1.2.0</span>
+            </header>
+            <main className="content-wrapper">
+                 <div className="content-area">
+                    {
+                        {
+                            main: <MainScreen />,
+                            list: <CardListScreen />,
+                            recent: <RecentHistoryScreen />,
+                            add: <AddCardScreen />,
+                            confirm: <ConfirmCardScreen />,
+                            detail: <CardDetailScreen />,
+                            memo: <MemoScreen />,
+                            analysisTool: <AnalysisToolScreen />,
+                            dynamicAnalysis: <DynamicAnalysisScreen />,
+                            policyDetail: <PolicyDetailScreen />,
+                            analysisList: <AnalysisListScreen />,
+                            excelIntegration: <ExcelIntegrationScreen />,
+                        }[view]
+                    }
+                </div>
+            </main>
         </div>
     );
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(<App />);
+const AppWrapper: FC = () => (
+    <AppProvider>
+        <App />
+    </AppProvider>
+);
+
+const root = ReactDOM.createRoot(document.getElementById('root')!);
+root.render(<AppWrapper />);
