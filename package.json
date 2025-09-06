@@ -1,19 +1,13 @@
 {
-  "name": "名刺管理アプリケーション",
-  "private": true,
-  "version": "0.0.0",
+  "name": "kakeibo-app",
+  "version": "2.0.0",
+  "description": "AI Kakeibo App with secure backend API.",
   "type": "module",
+  "private": true,
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
   },
-  "dependencies": {
-    "react": "^19.1.1"
-  },
-  "devDependencies": {
-    "@types/node": "^22.14.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
-  }
+  "author": "",
+  "license": "ISC"
 }
